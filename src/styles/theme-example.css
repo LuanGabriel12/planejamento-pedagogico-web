@@ -1,0 +1,49 @@
+/* ============================================
+   EXEMPLO: COMO ADICIONAR NOVAS PALETAS
+   ============================================ */
+
+/* PALETA CUSTOM EXEMPLO 
+:root[data-theme="ocean"] {
+  --bg-primary: 8 47 73;
+  --bg-secondary: 0 87 146;
+  --bg-tertiary: 0 119 182;
+  --bg-hover: 3 169 244;
+  --bg-active: 41 182 246;
+  
+  --text-primary: 224 242 254;
+  --text-secondary: 186 230 253;
+  --text-tertiary: 125 211 252;
+  --text-disabled: 79 195 247;
+  
+  --border-primary: 41 98 255;
+  --border-secondary: 66 165 245;
+  --border-hover: 100 181 246;
+  
+  --color-primary: 33 150 243;
+  --color-primary-hover: 66 165 245;
+  --color-success: 76 175 80;
+  --color-warning: 255 152 0;
+  --color-danger: 244 67 54;
+  --color-info: 0 188 212;
+  
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4);
+  
+  --scrollbar-track: 0 87 146;
+  --scrollbar-thumb: 3 169 244;
+  --scrollbar-thumb-hover: 41 182 246;
+}
+*/
+
+/* PASSOS PARA ADICIONAR UMA NOVA PALETA:
+ * 
+ * 1. Defina a nova paleta no arquivo src/index.css seguindo o padrão acima
+ * 2. Adicione o novo tema no tipo ThemeName em src/context/ThemeContext.tsx
+ * 3. Atualize o array AVAILABLE_THEMES em src/utils/themeHelpers.ts
+ * 4. Adicione o label do tema na função getThemeLabel em src/utils/themeHelpers.ts
+ * 
+ * IMPORTANTE: Todas as variáveis devem usar valores RGB sem o prefixo "rgb()"
+ * para permitir o uso de transparência com o formato "rgb(var(--color) / <alpha-value>)"
+ */
+
