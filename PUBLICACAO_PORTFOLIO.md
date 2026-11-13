@@ -1,8 +1,22 @@
-# Preparação de publicação — 13/11/2026
+# Relatório de publicação e revisão — 13/11/2026
 
-> Atualização: o repositório tornou-se público e a demonstração foi publicada em https://planejamento-pedagogico-web.pages.dev/. O texto abaixo registra a situação anterior à publicação.
+## Situação atual
 
-## Repositório
+O repositório [LuanGabriel12/planejamento-pedagogico-web](https://github.com/LuanGabriel12/planejamento-pedagogico-web) está público. A demonstração está publicada no [Cloudflare Pages](https://planejamento-pedagogico-web.pages.dev/), conectada ao GitHub pela branch `main`, com deploy automático habilitado. Os registros do Pages mostram build e publicação concluídos; a versão de produção identificada foi o commit `3b8f668`. A página inicial publicada foi aberta e exibiu o aviso de demonstração. Os fluxos de aprovação e solicitação de ajustes ainda devem ser repetidos na versão pública; os testes funcionais descritos abaixo foram locais.
+
+A aplicação é demonstrativa e deve ser usada apenas com dados fictícios. Não possui autenticação real; os perfis de professor e direção são simulados e os dados ficam no armazenamento local do navegador. Não há integração com APIs de IA.
+
+## Revisão do acesso do Cloudflare ao GitHub
+
+A instalação Cloudflare Workers and Pages estava configurada para todos os repositórios atuais e futuros. Foi alterada para **Only select repositories**, com apenas `LuanGabriel12/planejamento-pedagogico-web` selecionado; a configuração foi reaberta e confirmada. O GitHub também informa que repositórios públicos ficam acessíveis em modo somente leitura. A instalação mantém as permissões exibidas pelo GitHub para o repositório selecionado: leitura de metadados e leitura e escrita em administração, checks, código, deployments e pull requests.
+
+No painel Workers & Pages da conta consultada havia três projetos. `planejamento-pedagogico-web` estava conectado ao repositório acima; `oficina-pandas-validacao` e `orcazap` apareciam sem conexão Git. Não foram identificadas outras dependências Git nessa conta; isso não comprova a ausência de dependências em outras contas Cloudflare.
+
+## Histórico: preparação anterior à publicação
+
+As seções abaixo registram a situação e os testes anteriores à publicação; referências a repositório privado, ausência de deploy e autorizações pendentes descrevem aquele momento, não o estado atual.
+
+## Repositório — situação antes da publicação
 
 `LuanGabriel12/planejamento-pedagogico-web` — https://github.com/LuanGabriel12/planejamento-pedagogico-web. Criado privado para revisão. O conteúdo versionado inclui somente esta demonstração; a pasta do projeto original não foi usada nesta etapa. Não tornar público sem aprovação expressa. Nenhum deploy foi criado.
 
@@ -18,11 +32,11 @@ Na última rodada, executada em `127.0.0.1`, foram verificados acesso de profess
 
 Os arquivos de origem e os nomes dos arquivos elegíveis foram inspecionados em busca de credenciais, .env, conteúdo pessoal, URLs e integrações externas. Os usuários em `src/data/initialData.ts` são perfis fictícios com domínios `example.invalid`; não foram encontradas credenciais, .env sensíveis ou informações pessoais evidentes. Não há Google Fonts ou chamadas externas no código da aplicação examinada; não se garante ausência absoluta de segredos ou falhas. Os arquivos de dependências externas são baixados do registro npm na instalação, e o site hospedado pode gerar metadados normais de rede ao provedor.
 
-## Cloudflare Pages — preparação, sem deploy
+## Cloudflare Pages — preparação anterior ao deploy
 
 Integração futura com GitHub: selecionar o repositório e branch desejada, raiz do projeto, Node 24, comando `npm run build`, saída `dist`, sem variáveis secretas identificadas. A SPA usa uma URL principal e estados React; não exige regra própria de rotas nesta versão. O Pages normalmente oferece comportamento de SPA conforme https://developers.cloudflare.com/pages/framework-guides/deploy-a-react-site/ . Antes de conectar, verificar que a integração tem acesso apropriado ao repositório privado. A publicação pode disponibilizar o site publicamente, inclusive em prévias; não execute agora. Os dados continuam no navegador, isolados apenas pela origem, sem sincronização ou autenticação real.
 
-## Limitações, pendências e aprovações
+## Limitações e pendências registradas antes da publicação
 
 - Perfis, envio e revisão são simulados; sem servidor, contas seguras, dados compartilhados ou backup independente. Não inserir informações escolares reais.
 - Confirmar o fluxo de aprovação e ajustes novamente em uma próxima sessão de teste; avaliar acessibilidade e dispositivos adicionais.
