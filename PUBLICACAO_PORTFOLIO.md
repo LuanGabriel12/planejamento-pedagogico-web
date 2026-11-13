@@ -1,5 +1,7 @@
 # Preparação de publicação — 13/11/2026
 
+> Atualização: o repositório tornou-se público e a demonstração foi publicada em https://planejamento-pedagogico-web.pages.dev/. O texto abaixo registra a situação anterior à publicação.
+
 ## Repositório
 
 `LuanGabriel12/planejamento-pedagogico-web` — https://github.com/LuanGabriel12/planejamento-pedagogico-web. Criado privado para revisão. O conteúdo versionado inclui somente esta demonstração; a pasta do projeto original não foi usada nesta etapa. Não tornar público sem aprovação expressa. Nenhum deploy foi criado.

@@ -77,8 +77,8 @@ Segundo o autor, o projeto original foi desenvolvido com assistência do Cursor 
 
 Detalhes das escolhas e limitações estão no [estudo de caso](ESTUDO_DE_CASO.md).
 
-## Publicação futura no Cloudflare Pages
+## Publicação no Cloudflare Pages
 
-O projeto pode ser publicado como site estático após revisão e autorização. Na integração com GitHub, selecione este repositório, raiz do projeto, Node 24, build `npm run build` e diretório `dist`. Nenhuma variável secreta é necessária. A aplicação usa apenas a página principal e estados React, sem rotas de negócio; não exige regra específica de rotas nesta versão. O Cloudflare Pages trata SPAs conforme sua [documentação React](https://developers.cloudflare.com/pages/framework-guides/deploy-a-react-site/). O armazenamento continuará no navegador do visitante e uma hospedagem não adicionará autenticação.
+O projeto está publicado como site estático no Cloudflare Pages. Na integração com GitHub, selecione este repositório, raiz do projeto, Node 24, build `npm run build` e diretório `dist`. Nenhuma variável secreta é necessária. A aplicação usa apenas a página principal e estados React, sem rotas de negócio; não exige regra específica de rotas nesta versão. O Cloudflare Pages trata SPAs conforme sua [documentação React](https://developers.cloudflare.com/pages/framework-guides/deploy-a-react-site/). O armazenamento continuará no navegador do visitante e uma hospedagem não adicionará autenticação.
 
-Não há demonstração online publicada neste momento.
+**Demonstração online:** https://planejamento-pedagogico-web.pages.dev/
