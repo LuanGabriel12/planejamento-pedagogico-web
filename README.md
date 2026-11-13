@@ -1,25 +1,40 @@
 # Planejamento Pedagógico Quinzenal
 
-Uma aplicação web demonstrativa para explorar a organização de planejamentos por quinzena e um fluxo de revisão pedagógica. O projeto nasceu de uma necessidade familiar: tornar mais fácil visualizar o planejamento de uma professora e imaginar como a direção poderia acompanhá-lo.
+Criei este projeto para ajudar minha mãe a organizar seus planejamentos pedagógicos. A partir dessa necessidade, desenvolvi, com ajuda do Cursor e de inteligência artificial, um protótipo web com áreas para professor e direção.
 
-> **Projeto demonstrativo desenvolvido com assistência de inteligência artificial. Os perfis são simulados, não existe autenticação real e os dados permanecem armazenados no navegador. Não utilizar informações escolares reais.**
+## Demonstração online
 
-Não é um produto em produção. A demonstração funciona em um navegador por vez e não comprova implantação, uso real por uma escola ou resultados mensuráveis.
+[Acessar o Planejamento Pedagógico Quinzenal](https://planejamento-pedagogico-web.pages.dev/)
+
+> Esta é uma demonstração com perfis simulados. Use apenas dados fictícios.
+
+## Sobre o projeto
+
+A ideia surgiu da vontade de tornar mais simples a organização dos planejamentos por quinzena e explorar uma forma de acompanhar a revisão pedagógica. Fui conduzindo a construção a partir das funcionalidades que queria experimentar, desde o formulário até os painéis de acompanhamento.
+
+Preparei esta versão para apresentar o fluxo no portfólio. Nela, é possível alternar entre perfis fictícios de professor e direção e simular a revisão no mesmo navegador.
 
 ## Funcionalidades
 
-- Perfis fictícios de professor e direção, selecionados sem senha.
-- Calendário anual com 24 quinzenas, status e acompanhamento visual.
-- Criação, edição, validação e salvamento local de planejamentos.
-- Simulação de envio para revisão, comentários, solicitação de ajustes e aprovação.
-- Painel da direção com busca por título e filtros por professor e status.
-- Tema claro/escuro, notificações locais e adaptação para telas menores.
+- **Área do professor:** calendário anual com 24 quinzenas e acompanhamento do status dos planejamentos.
+- **Planejamentos:** criação, edição, validação e salvamento de rascunhos no navegador.
+- **Painel da direção:** visualização dos planejamentos, busca por título e filtros por professor e status.
+- **Revisão e feedback:** envio para revisão, comentários, solicitação de ajustes e aprovação simulados.
+- **Interface:** modo claro e escuro, notificações locais e adaptação para telas menores.
 
-As ações de revisão são simulações locais. Não há comunicação entre usuários ou dispositivos.
+Os perfis e a troca entre professor e direção são simulados. Os dados ficam no mesmo navegador e não são sincronizados entre pessoas ou dispositivos.
 
-## Telas da demonstração
+## Tecnologias utilizadas
 
-Capturas reais da aplicação local com dados fictícios:
+- React e TypeScript para a interface e a organização da aplicação.
+- Vite para desenvolvimento e build.
+- Tailwind CSS e PostCSS para estilos.
+- Lucide React para ícones e React Hot Toast para notificações.
+- LocalStorage para armazenar os dados da demonstração no navegador.
+
+## Imagens
+
+Capturas da aplicação com dados fictícios:
 
 | Entrada | Painel do professor |
 | --- | --- |
@@ -33,52 +48,43 @@ Capturas reais da aplicação local com dados fictícios:
 | --- | --- |
 | ![Revisão de planejamento fictício](docs/imagens/05-revisao.jpg) | ![Painel no modo escuro](docs/imagens/06-modo-escuro.jpg) |
 
-## Tecnologias e arquitetura
+## Como executar
 
-React 18, TypeScript, Vite, Tailwind CSS, PostCSS, lucide-react e react-hot-toast. A interface é uma aplicação de página única; não há backend, banco de dados, API de IA, agentes ou roteador de páginas.
-
-```text
-index.html → main.tsx → App.tsx
-                         ├─ componentes de professor e direção
-                         ├─ AppContext → planejamentos e sessão simulada
-                         ├─ ThemeContext → tema
-                         └─ storageHelpers → localStorage do navegador
-```
-
-Os perfis, textos e endereços de exemplo são fictícios. As chaves de armazenamento são específicas da demo. Os perfis compartilham os mesmos dados na mesma origem, e as cópias locais não são backup independente.
-
-## Instalação e execução
-
-Requisitos: Node.js 24 e npm. Na pasta do projeto:
+É necessário ter Node.js 24 e npm instalados. Na pasta do projeto, execute:
 
 ```bash
 npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
-Abra o endereço exibido no terminal. Para gerar e testar a versão estática:
+Abra no navegador o endereço exibido no terminal. Para gerar e testar a versão estática:
 
 ```bash
 npm run build
 npm run preview -- --host 127.0.0.1
 ```
 
-Para experimentar, entre como Professor Exemplo 1, crie um plano em uma quinzena livre, preencha os campos e envie. Saia pelo menu de perfil, entre como Direção Exemplo no mesmo navegador e abra o item pendente. Use somente dados fictícios.
+Para experimentar o fluxo, entre como Professor Exemplo 1, crie um planejamento e envie para revisão. Depois, saia e entre como Direção Exemplo no mesmo navegador para encontrar o planejamento.
 
-## Testes e limitações
+## Como desenvolvi
 
-Em 13/11/2026, instalação limpa e build passaram com as verificações do TypeScript ativas; `npm audit` retornou zero alertas conhecidos, resultado pontual que não garante ausência de falhas. Na última rodada foram observados acesso, rascunho, salvamento repetido, recarga, edição, validação, envio e busca. Aprovação e solicitação de ajustes foram verificadas na rodada anterior, documentada em [Relatório de testes e riscos](RELATORIO_TESTES_E_RISCOS.md); a repetição completa de revisão na rodada final ficou limitada por falha na conexão do navegador de teste. Não há suíte automatizada.
+Usei o Cursor e inteligência artificial como apoio na implementação do código e da interface. Fui direcionando o desenvolvimento a partir das necessidades que identifiquei e das funcionalidades que queria construir. Essa experiência me ajudou a transformar uma ideia próxima da minha realidade em uma aplicação web demonstrativa.
 
-LocalStorage pode ser limpo ou ficar indisponível e pode ser acessado por código na mesma origem; não é armazenamento seguro ou compartilhado. Não há senha, permissões reais nem recuperação independente. O checklist de revisão é visual; a persistência dele não foi comprovada. Não houve auditoria completa de acessibilidade, múltiplas abas ou dispositivos.
+A assistência de IA foi usada no desenvolvimento; o sistema não possui integração com uma API de IA.
 
-## Cursor e assistência de IA
+## Limitações atuais
 
-Segundo o autor, o projeto original foi desenvolvido com assistência do Cursor para transformar uma necessidade familiar em um protótipo de software. Não há histórico preservado suficiente para atribuir partes específicas do código à IA ou quantificar a participação de cada um. A demonstração foi revisada e preparada posteriormente. Usar IA para auxiliar o desenvolvimento não equivale a integrar uma API de IA: esta aplicação não possui essa integração.
+Este é um protótipo demonstrativo, sem autenticação real. Os dados ficam armazenados no navegador e não devem incluir informações escolares reais.
 
-Detalhes das escolhas e limitações estão no [estudo de caso](ESTUDO_DE_CASO.md).
+## Próximos passos
 
-## Publicação no Cloudflare Pages
+Como possibilidades para uma evolução futura, gostaria de explorar:
 
-O projeto está publicado como site estático no Cloudflare Pages. Na integração com GitHub, selecione este repositório, raiz do projeto, Node 24, build `npm run build` e diretório `dist`. Nenhuma variável secreta é necessária. A aplicação usa apenas a página principal e estados React, sem rotas de negócio; não exige regra específica de rotas nesta versão. O Cloudflare Pages trata SPAs conforme sua [documentação React](https://developers.cloudflare.com/pages/framework-guides/deploy-a-react-site/). O armazenamento continuará no navegador do visitante e uma hospedagem não adicionará autenticação.
+- Autenticação de usuários.
+- Banco de dados.
+- Sincronização entre usuários.
+- Melhorias na experiência de utilização.
 
-**Demonstração online:** https://planejamento-pedagogico-web.pages.dev/
+## Documentação
+
+Para conhecer mais sobre as escolhas e verificações do projeto, consulte o [estudo de caso](ESTUDO_DE_CASO.md), o [relatório de testes e riscos](RELATORIO_TESTES_E_RISCOS.md) e o [relatório de publicação](PUBLICACAO_PORTFOLIO.md). A publicação utiliza o [Cloudflare Pages](https://developers.cloudflare.com/pages/framework-guides/deploy-a-react-site/).
