@@ -25,9 +25,9 @@ Capturas reais da aplicação local com dados fictícios:
 | --- | --- |
 | ![Tela de entrada com perfis fictícios](docs/imagens/01-entrada.jpg) | ![Painel do professor](docs/imagens/02-professor.jpg) |
 
-| Formulário | Painel da direção |
+| Formulário | Entrada da direção |
 | --- | --- |
-| ![Formulário de planejamento](docs/imagens/03-formulario.jpg) | ![Painel da direção](docs/imagens/04-direcao.jpg) |
+| ![Formulário de planejamento](docs/imagens/03-formulario.jpg) | ![Seleção do perfil da direção](docs/imagens/04-direcao.jpg) |
 
 | Revisão | Modo escuro |
 | --- | --- |
