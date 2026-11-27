@@ -11,15 +11,14 @@ export const Card: React.FC<CardProps> = ({
   className = '',
   ...props
 }) => {
-  const hoverClass = hover ? 'hover:shadow-xl hover:-translate-y-1 hover:border-strong' : '';
-  
+  const hoverClass = hover ? 'hover:shadow-md hover:border-strong transition-all duration-150' : '';
+
   return (
     <div
-      className={`rounded-xl shadow-md transition-all duration-200 bg-surface border-2 border-base overflow-hidden ${hoverClass} ${className}`}
+      className={`rounded-xl shadow-sm bg-surface border border-base ${hoverClass} ${className}`}
       {...props}
     >
       {children}
     </div>
   );
 };
-

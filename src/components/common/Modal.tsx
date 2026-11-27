@@ -1,35 +1,41 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title?: string;
+  title: string;
+  subtitle?: string;
   children: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  footer?: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
   onClose,
   title,
+  subtitle,
   children,
+  footer,
   size = 'md'
 }) => {
-  // Fechar com ESC
+  const titleId = useId();
+
   useEffect(() => {
+    if (!isOpen) return;
+
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    
-    if (isOpen) {
-      document.addEventListener('keydown', handleEsc);
-      document.body.style.overflow = 'hidden';
-    }
-    
+
+    document.addEventListener('keydown', handleEsc);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     return () => {
       document.removeEventListener('keydown', handleEsc);
-      document.body.style.overflow = 'unset';
+      document.body.style.overflow = previousOverflow;
     };
   }, [isOpen, onClose]);
 
@@ -39,39 +45,49 @@ export const Modal: React.FC<ModalProps> = ({
     sm: 'max-w-md',
     md: 'max-w-2xl',
     lg: 'max-w-4xl',
-    xl: 'max-w-6xl',
-    full: 'max-w-[95vw] max-h-[95vh]'
+    xl: 'max-w-6xl'
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-      {/* Backdrop - semi-transparente para profundidade */}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
       <div
-        className="absolute inset-0 backdrop-blur-sm bg-black/70"
+        className="fixed inset-0 bg-black/60 backdrop-blur-[2px]"
         onClick={onClose}
+        aria-hidden="true"
       />
-      
-      {/* Modal - fundo 100% sólido */}
-      <div className={`relative rounded-2xl shadow-2xl ${sizes[size]} w-full animate-scale-in overflow-hidden flex flex-col max-h-[90vh] bg-surface border-2 border-base`}>
-        {/* Header */}
-        {title && (
-          <div className="flex items-center justify-between px-8 py-6 border-b-2 border-base bg-surface">
-            <h2 className="text-2xl font-bold text-text-primary tracking-tight">
+
+      <div
+        className={`relative z-10 w-full ${sizes[size]} max-h-[92vh] bg-surface rounded-2xl shadow-xl border border-base flex flex-col overflow-hidden`}
+      >
+        <div className="flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-base bg-surface shrink-0">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-lg sm:text-xl font-bold text-primary truncate">
               {title}
             </h2>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg transition-all text-text-muted hover:text-text-primary hover:bg-hover active:scale-95"
-            >
-              <X className="w-6 h-6" />
-            </button>
+            {subtitle && <p className="text-xs sm:text-sm text-muted mt-0.5">{subtitle}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar janela"
+            className="p-2 rounded-lg text-muted hover:text-primary hover:bg-hover transition-colors shrink-0"
+          >
+            <X className="w-5 h-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-5 bg-surface">{children}</div>
+
+        {footer && (
+          <div className="px-5 sm:px-6 py-3.5 border-t border-base bg-elevated/60 shrink-0">
+            {footer}
           </div>
         )}
-        
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8 bg-surface">
-          {children}
-        </div>
       </div>
     </div>
   );

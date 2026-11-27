@@ -1,9 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import {
+  FileText,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  Eye,
+  ClipboardCheck,
+  SearchX
+} from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { FiltroStatusDirecao } from '../../types';
+import {
+  calcularIndicadoresDirecao,
+  filtrarPlanejamentosDirecao
+} from '../../domain/metrics';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
+import { StatusBadge } from '../common/StatusBadge';
 import { Input } from '../common/Input';
 import { Select } from '../common/Select';
 import { DateHelpers } from '../../utils/dateHelpers';
@@ -13,64 +27,44 @@ export const DiretorDashboard: React.FC = () => {
   const { estado, planejamentoParaAbrir, limparPlanejamentoParaAbrir } = useApp();
   const [busca, setBusca] = useState('');
   const [filtroProfessor, setFiltroProfessor] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState<FiltroStatusDirecao>('todos');
   const [planejamentoRevisao, setPlanejamentoRevisao] = useState<string | null>(null);
 
   const { anoAtual } = estado.configuracoes;
-  const planejamentos = estado.planejamentos.filter(p => p.ano === anoAtual);
 
-  // Estatísticas
-  const total = planejamentos.length;
-  const pendentes = planejamentos.filter(p => p.status === 'aguardando_revisao');
-  const aprovados = planejamentos.filter(p => p.status === 'aprovado');
-  const ajustes = planejamentos.filter(p => p.status === 'ajustes_solicitados');
-
-  // Filtrar planejamentos
-  let planejamentosFiltrados = filtroStatus 
-    ? planejamentos.filter(p => p.status === filtroStatus)
-    : pendentes; // Por padrão, mostrar pendentes
-
-  if (busca) {
-    planejamentosFiltrados = planejamentosFiltrados.filter(p =>
-      p.titulo.toLowerCase().includes(busca.toLowerCase())
-    );
-  }
-
-  if (filtroProfessor) {
-    planejamentosFiltrados = planejamentosFiltrados.filter(p => p.professorId === filtroProfessor);
-  }
-
-  // Ordenar por mais antigos primeiro (se tiver enviadoEm) ou por criação
-  planejamentosFiltrados.sort((a, b) => {
-    const dataA = a.enviadoEm || a.criadoEm;
-    const dataB = b.enviadoEm || b.criadoEm;
-    return new Date(dataA).getTime() - new Date(dataB).getTime();
+  const indicadores = calcularIndicadoresDirecao(estado.planejamentos, anoAtual);
+  const planejamentosFiltrados = filtrarPlanejamentosDirecao(estado.planejamentos, {
+    ano: anoAtual,
+    busca,
+    professorId: filtroProfessor,
+    status: filtroStatus
   });
 
-  // Obter professor
-  const getProfessor = (id: string) => {
-    return estado.usuarios.find(u => u.id === id);
-  };
-  
-  // Escutar notificações para abrir planejamentos
+  const professores = estado.usuarios.filter(u => u.role === 'professor');
+  const getProfessor = (id: string) => estado.usuarios.find(u => u.id === id);
+
   useEffect(() => {
     if (planejamentoParaAbrir) {
       setPlanejamentoRevisao(planejamentoParaAbrir);
       limparPlanejamentoParaAbrir();
     }
-  }, [planejamentoParaAbrir]);
+  }, [planejamentoParaAbrir, limparPlanejamentoParaAbrir]);
 
-  // Se está revisando um planejamento
   if (planejamentoRevisao) {
     return (
       <PaginaRevisao
         planejamentoId={planejamentoRevisao}
         onClose={() => setPlanejamentoRevisao(null)}
         onProximo={() => {
-          // Ir para o próximo pendente
-          const index = planejamentosFiltrados.findIndex(p => p.id === planejamentoRevisao);
-          if (index < planejamentosFiltrados.length - 1) {
-            setPlanejamentoRevisao(planejamentosFiltrados[index + 1].id);
+          const proximosPendentes = filtrarPlanejamentosDirecao(estado.planejamentos, {
+            ano: anoAtual,
+            busca: '',
+            professorId: '',
+            status: 'aguardando_revisao'
+          }).filter(p => p.id !== planejamentoRevisao);
+
+          if (proximosPendentes.length > 0) {
+            setPlanejamentoRevisao(proximosPendentes[0].id);
           } else {
             setPlanejamentoRevisao(null);
           }
@@ -79,212 +73,272 @@ export const DiretorDashboard: React.FC = () => {
     );
   }
 
+  const temFiltrosAtivos = Boolean(busca.trim() || filtroProfessor || filtroStatus !== 'todos');
+
+  const limparFiltros = () => {
+    setBusca('');
+    setFiltroProfessor('');
+    setFiltroStatus('todos');
+  };
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Título */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-primary mb-2">
-          Dashboard do Diretor 👔
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-primary">
+          Painel da Direção · {anoAtual}
         </h1>
-        <p className="text-secondary">
-          Gerencie e revise os planejamentos pedagógicos
+        <p className="text-sm text-secondary mt-1">
+          Indicadores calculados sobre os registros locais de {anoAtual}. Revise envios, solicite ajustes ou aprove planejamentos na simulação.
         </p>
       </div>
 
-      {/* Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        {/* Total */}
-        <Card hover className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-muted mb-1">TOTAL</p>
-              <p className="text-3xl font-bold text-primary">{total}</p>
-            </div>
-            <div className="p-3 bg-elevated rounded-lg">
-              <FileText className="w-6 h-6 text-primary" />
-            </div>
+      {/* Indicadores interativos acessíveis */}
+      <section aria-label="Indicadores do ano" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        <button
+          type="button"
+          onClick={() => setFiltroStatus('todos')}
+          aria-pressed={filtroStatus === 'todos'}
+          className={`text-left p-4 sm:p-5 rounded-xl bg-surface border transition-all shadow-sm hover:border-strong ${
+            filtroStatus === 'todos' ? 'border-primary ring-1 ring-primary' : 'border-base'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Total em {anoAtual}
+            </span>
+            <FileText className="w-5 h-5 text-primary" aria-hidden="true" />
           </div>
-        </Card>
+          <p className="text-2xl sm:text-3xl font-bold text-primary">{indicadores.total}</p>
+          <p className="text-xs text-muted mt-1">
+            Inclui {indicadores.rascunhos} rascunho{indicadores.rascunhos === 1 ? '' : 's'}
+          </p>
+        </button>
 
-        {/* Pendentes */}
-        <Card hover className="p-6 bg-surface border-2 border-warning cursor-pointer" onClick={() => setFiltroStatus('aguardando_revisao')}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-warning mb-1 font-medium">PENDENTES</p>
-              <p className="text-3xl font-bold text-warning">{pendentes.length}</p>
-              <p className="text-xs text-warning/80 mt-1">
-                {pendentes.length > 0 ? 'Revisar agora! 🔴' : 'Tudo em dia!'}
-              </p>
-            </div>
-            <div className="p-3 bg-warning/10 rounded-lg animate-pulse-soft">
-              <Clock className="w-6 h-6 text-warning" />
-            </div>
+        <button
+          type="button"
+          onClick={() => setFiltroStatus('aguardando_revisao')}
+          aria-pressed={filtroStatus === 'aguardando_revisao'}
+          className={`text-left p-4 sm:p-5 rounded-xl bg-surface border transition-all shadow-sm hover:border-warning ${
+            filtroStatus === 'aguardando_revisao'
+              ? 'border-warning ring-1 ring-warning'
+              : 'border-base'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-warning">
+              Aguardando revisão
+            </span>
+            <Clock className="w-5 h-5 text-warning" aria-hidden="true" />
           </div>
-        </Card>
+          <p className="text-2xl sm:text-3xl font-bold text-warning">{indicadores.pendentes}</p>
+          <p className="text-xs text-muted mt-1">
+            {indicadores.pendentes > 0 ? 'Prontos para análise' : 'Fila de revisão vazia'}
+          </p>
+        </button>
 
-        {/* Aprovados */}
-        <Card hover className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-muted mb-1">APROVADOS</p>
-              <p className="text-3xl font-bold text-success">{aprovados.length}</p>
-              <p className="text-xs text-muted mt-1">
-                {Math.round((aprovados.length / Math.max(total, 1)) * 100)}% do total
-              </p>
-            </div>
-            <div className="p-3 bg-success/10 rounded-lg">
-              <CheckCircle2 className="w-6 h-6 text-success" />
-            </div>
+        <button
+          type="button"
+          onClick={() => setFiltroStatus('aprovado')}
+          aria-pressed={filtroStatus === 'aprovado'}
+          className={`text-left p-4 sm:p-5 rounded-xl bg-surface border transition-all shadow-sm hover:border-success ${
+            filtroStatus === 'aprovado' ? 'border-success ring-1 ring-success' : 'border-base'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-success">
+              Aprovados
+            </span>
+            <CheckCircle2 className="w-5 h-5 text-success" aria-hidden="true" />
           </div>
-        </Card>
+          <p className="text-2xl sm:text-3xl font-bold text-success">{indicadores.aprovados}</p>
+          <p className="text-xs text-muted mt-1">{indicadores.taxaAprovacao}% do total do ano</p>
+        </button>
 
-        {/* Ajustes */}
-        <Card hover className="p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-muted mb-1">AJUSTES</p>
-              <p className="text-3xl font-bold text-danger">{ajustes.length}</p>
-              <p className="text-xs text-muted mt-1">
-                {ajustes.length > 0 ? 'Aguardando retorno' : 'Nenhum pendente'}
-              </p>
-            </div>
-            <div className="p-3 bg-danger/10 rounded-lg">
-              <AlertCircle className="w-6 h-6 text-danger" />
-            </div>
+        <button
+          type="button"
+          onClick={() => setFiltroStatus('ajustes_solicitados')}
+          aria-pressed={filtroStatus === 'ajustes_solicitados'}
+          className={`text-left p-4 sm:p-5 rounded-xl bg-surface border transition-all shadow-sm hover:border-danger ${
+            filtroStatus === 'ajustes_solicitados'
+              ? 'border-danger ring-1 ring-danger'
+              : 'border-base'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold uppercase tracking-wide text-danger">
+              Ajustes solicitados
+            </span>
+            <AlertTriangle className="w-5 h-5 text-danger" aria-hidden="true" />
           </div>
-        </Card>
-      </div>
+          <p className="text-2xl sm:text-3xl font-bold text-danger">{indicadores.ajustes}</p>
+          <p className="text-xs text-muted mt-1">
+            {indicadores.ajustes > 0 ? 'Aguardando reenvio' : 'Nenhum em correção'}
+          </p>
+        </button>
+      </section>
 
-      {/* Filtros */}
-      <Card className="p-6 mb-6">
-        <h2 className="text-xl font-bold text-primary mb-4">🔍 Filtros e Busca</h2>
-        <div className="grid md:grid-cols-4 gap-4">
-          <Input
-            placeholder="Buscar por título..."
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-          />
-          
-          <Select
-            value={filtroProfessor}
-            onChange={e => setFiltroProfessor(e.target.value)}
-            options={[
-              { value: '', label: 'Todos os professores' },
-              ...estado.usuarios
-                .filter(u => u.role === 'professor')
-                .map(u => ({ value: u.id, label: u.nome }))
-            ]}
-          />
-          
-          <Select
-            value={filtroStatus}
-            onChange={e => setFiltroStatus(e.target.value)}
-            options={[
-              { value: '', label: 'Pendentes (padrão)' },
-              { value: 'aguardando_revisao', label: '⏳ Aguardando Revisão' },
-              { value: 'aprovado', label: '✅ Aprovados' },
-              { value: 'ajustes_solicitados', label: '⚠️ Ajustes Solicitados' },
-              { value: 'rascunho', label: '📝 Rascunhos' }
-            ]}
-          />
+      {/* Filtros e Busca */}
+      <Card className="p-4 sm:p-5 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+          <div className="md:col-span-4">
+            <Input
+              label="Buscar por título"
+              placeholder="Digite parte do título..."
+              value={busca}
+              onChange={e => setBusca(e.target.value)}
+            />
+          </div>
 
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setBusca('');
-              setFiltroProfessor('');
-              setFiltroStatus('');
-            }}
-          >
-            Limpar Filtros
-          </Button>
+          <div className="md:col-span-3">
+            <Select
+              label="Professor"
+              value={filtroProfessor}
+              onChange={e => setFiltroProfessor(e.target.value)}
+              options={[
+                { value: '', label: 'Todos os professores' },
+                ...professores.map(u => ({ value: u.id, label: u.nome }))
+              ]}
+            />
+          </div>
+
+          <div className="md:col-span-3">
+            <Select
+              label="Status"
+              value={filtroStatus}
+              onChange={e => setFiltroStatus(e.target.value as FiltroStatusDirecao)}
+              options={[
+                { value: 'todos', label: 'Todos os status' },
+                { value: 'aguardando_revisao', label: 'Aguardando revisão' },
+                { value: 'ajustes_solicitados', label: 'Ajustes solicitados' },
+                { value: 'aprovado', label: 'Aprovados' },
+                { value: 'rascunho', label: 'Rascunhos' }
+              ]}
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <Button
+              variant="secondary"
+              onClick={limparFiltros}
+              disabled={!temFiltrosAtivos}
+              className="w-full"
+            >
+              Limpar filtros
+            </Button>
+          </div>
         </div>
       </Card>
 
-      {/* Lista de Planejamentos */}
-      <div>
-        <h2 className="text-2xl font-bold text-primary mb-4">
-          📋 {filtroStatus ? 'PLANEJAMENTOS' : 'PLANEJAMENTOS PENDENTES'} ({planejamentosFiltrados.length})
-        </h2>
+      {/* Listagem */}
+      <section aria-labelledby="titulo-lista-planejamentos">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h2 id="titulo-lista-planejamentos" className="text-lg sm:text-xl font-bold text-primary">
+            Planejamentos ({planejamentosFiltrados.length})
+          </h2>
+          <p className="text-xs sm:text-sm text-muted">
+            Exibindo {planejamentosFiltrados.length} de {indicadores.total} registro
+            {indicadores.total === 1 ? '' : 's'} em {anoAtual}
+          </p>
+        </div>
 
-        {planejamentosFiltrados.length === 0 ? (
-          <Card className="p-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-success/10 rounded-full mb-4">
-              <CheckCircle2 className="w-8 h-8 text-success" />
-            </div>
-            <h3 className="text-xl font-bold text-primary mb-2">
-              Tudo em dia! 🎉
+        {indicadores.total === 0 ? (
+          <Card className="p-10 text-center">
+            <FileText className="w-10 h-10 text-muted mx-auto mb-3" aria-hidden="true" />
+            <h3 className="text-base font-bold text-primary mb-1">
+              Nenhum planejamento registrado em {anoAtual}
             </h3>
-            <p className="text-secondary">
-              Nenhum planejamento corresponde aos filtros selecionados.
+            <p className="text-sm text-secondary max-w-md mx-auto">
+              Alterne para um perfil fictício de professor para criar e enviar um planejamento neste ano ou selecione outro ano no cabeçalho.
             </p>
           </Card>
+        ) : planejamentosFiltrados.length === 0 ? (
+          <Card className="p-10 text-center">
+            <SearchX className="w-10 h-10 text-muted mx-auto mb-3" aria-hidden="true" />
+            <h3 className="text-base font-bold text-primary mb-1">
+              Nenhum resultado encontrado
+            </h3>
+            <p className="text-sm text-secondary mb-4">
+              Nenhum planejamento em {anoAtual} corresponde aos filtros atuais.
+            </p>
+            <Button variant="secondary" size="sm" onClick={limparFiltros}>
+              Limpar filtros
+            </Button>
+          </Card>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {planejamentosFiltrados.map(planej => {
               const professor = getProfessor(planej.professorId);
-              const diasEspera = Math.floor((Date.now() - new Date(planej.enviadoEm!).getTime()) / (1000 * 60 * 60 * 24));
-
-              // Badge de status
-              const getStatusBadge = () => {
-                switch (planej.status) {
-                  case 'aguardando_revisao':
-                    return <Badge variant="warning">⏳ Aguardando</Badge>;
-                  case 'aprovado':
-                    return <Badge variant="success">✅ Aprovado</Badge>;
-                  case 'ajustes_solicitados':
-                    return <Badge variant="danger">⚠️ Ajustes</Badge>;
-                  case 'rascunho':
-                    return <Badge variant="info">📝 Rascunho</Badge>;
-                  default:
-                    return null;
-                }
-              };
+              const dataReferenciaEnvio = planej.reenviadoEm || planej.enviadoEm;
+              const diasEspera =
+                planej.status === 'aguardando_revisao'
+                  ? DateHelpers.diasDesde(dataReferenciaEnvio)
+                  : null;
 
               return (
-                <Card key={planej.id} hover className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center font-bold">
-                          {professor?.avatar}
+                <Card key={planej.id} hover className="p-4 sm:p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <div
+                          className="w-8 h-8 bg-primary text-on-primary rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                          aria-hidden="true"
+                        >
+                          {professor?.avatar || '??'}
                         </div>
-                        <div className="flex-1">
-                          <p className="font-bold text-primary">{professor?.nome}</p>
-                          <p className="text-sm text-secondary">
-                            {DateHelpers.getNomeMes(planej.mes)} {planej.ano} - {planej.quinzena}ª Quinzena
+                        <div className="min-w-0 mr-2">
+                          <p className="text-sm font-semibold text-primary truncate">
+                            {professor?.nome || 'Professor desconhecido'}
+                          </p>
+                          <p className="text-xs text-muted">
+                            {DateHelpers.getNomeMes(planej.mes)} {planej.ano} · {planej.quinzena}ª
+                            Quinzena · v{planej.versao}
                           </p>
                         </div>
-                        {getStatusBadge()}
-                        {planej.status === 'aguardando_revisao' && diasEspera > 2 && (
-                          <Badge variant="danger" className="animate-pulse-soft">
-                            ⏰ {diasEspera} dias
+                        <StatusBadge status={planej.status} size="sm" />
+                        {diasEspera !== null && diasEspera > 2 && (
+                          <Badge variant="danger" size="sm">
+                            {diasEspera} dias em espera
                           </Badge>
                         )}
                       </div>
 
-                      <h3 className="text-lg font-semibold text-primary mb-2">
-                        {planej.titulo}
+                      <h3 className="text-base font-bold text-primary break-words mb-1.5">
+                        {planej.titulo || 'Rascunho sem título definido'}
                       </h3>
 
-                      <div className="flex items-center gap-4 text-sm text-secondary flex-wrap">
-                        {planej.enviadoEm && (
-                          <span>📤 Enviado: {DateHelpers.tempoDesde(planej.enviadoEm)}</span>
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-secondary">
+                        {planej.disciplinas.length > 0 && (
+                          <span>Disciplinas: {planej.disciplinas.join(', ')}</span>
                         )}
-                        {planej.revisadoEm && (
-                          <span>✅ Revisado: {DateHelpers.tempoDesde(planej.revisadoEm)}</span>
+                        <span>{planej.objetivos.length} objetivo(s)</span>
+                        {dataReferenciaEnvio ? (
+                          <span>
+                            {planej.reenviadoEm ? 'Reenviado' : 'Enviado'}:{' '}
+                            {DateHelpers.formatarData(dataReferenciaEnvio)}
+                          </span>
+                        ) : (
+                          <span>Atualizado: {DateHelpers.formatarData(planej.atualizadoEm)}</span>
                         )}
-                        <span>🎯 {planej.objetivos.length} objetivos</span>
-                        <span>📚 {planej.disciplinas.join(', ')}</span>
                       </div>
                     </div>
 
-                    <div className="flex-shrink-0 ml-4">
+                    <div className="shrink-0">
                       <Button
-                        variant={planej.status === 'aguardando_revisao' ? 'primary' : 'ghost'}
+                        variant={planej.status === 'aguardando_revisao' ? 'primary' : 'secondary'}
                         onClick={() => setPlanejamentoRevisao(planej.id)}
+                        className="w-full sm:w-auto"
                       >
-                        {planej.status === 'aguardando_revisao' ? '✅ Revisar Agora' : '👁️ Visualizar'}
+                        {planej.status === 'aguardando_revisao' ? (
+                          <>
+                            <ClipboardCheck className="w-4 h-4" aria-hidden="true" />
+                            Revisar
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-4 h-4" aria-hidden="true" />
+                            Visualizar
+                          </>
+                        )}
                       </Button>
                     </div>
                   </div>
@@ -293,8 +347,7 @@ export const DiretorDashboard: React.FC = () => {
             })}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 };
-

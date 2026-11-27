@@ -1,8 +1,12 @@
 import React from 'react';
-import { X, Edit, CheckCircle2 } from 'lucide-react';
+import { Edit3, CheckCircle2, Star } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { podeEditarPlanejamento } from '../../domain/stateMachine';
+import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
 import { Badge } from '../common/Badge';
+import { StatusBadge } from '../common/StatusBadge';
+import { HistoricoTimeline } from '../common/HistoricoTimeline';
 import { DateHelpers } from '../../utils/dateHelpers';
 
 interface VisualizadorPlanejamentoProps {
@@ -16,235 +20,234 @@ export const VisualizadorPlanejamento: React.FC<VisualizadorPlanejamentoProps> =
   onClose,
   onEditar
 }) => {
-  const { estado } = useApp();
+  const { estado, usuarioLogado } = useApp();
   const planejamento = estado.planejamentos.find(p => p.id === planejamentoId);
   const professor = estado.usuarios.find(u => u.id === planejamento?.professorId);
 
   if (!planejamento || !professor) return null;
 
-  // Status badge
-  const getStatusBadge = () => {
-    switch (planejamento.status) {
-      case 'aprovado':
-        return <Badge variant="success">✅ APROVADO</Badge>;
-      case 'aguardando_revisao':
-        return <Badge variant="warning">⏳ AGUARDANDO REVISÃO</Badge>;
-      case 'ajustes_solicitados':
-        return <Badge variant="danger">⚠️ AJUSTES SOLICITADOS</Badge>;
-      case 'rascunho':
-        return <Badge variant="info">📝 RASCUNHO</Badge>;
-      default:
-        return null;
-    }
-  };
-
-  const podeEditar = planejamento.status === 'rascunho' || planejamento.status === 'ajustes_solicitados';
+  const permissaoEdicao = podeEditarPlanejamento(planejamento, usuarioLogado);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="min-h-screen px-4 py-8">
-        <div className="max-w-4xl mx-auto bg-surface rounded-2xl shadow-2xl animate-scale-in border-2 border-base">
-          {/* Header */}
-          <div className="sticky top-0 z-10 bg-surface border-b-2 border-base px-8 py-6 rounded-t-2xl shadow-md">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-3 mb-3">
-                  <h2 className="text-2xl font-bold text-text-primary tracking-tight">
-                    PLANEJAMENTO PEDAGÓGICO QUINZENAL
-                  </h2>
-                  {getStatusBadge()}
-                </div>
-                <div className="text-sm font-medium text-text-muted space-y-1">
-                  <p>📅 {DateHelpers.getNomeMes(planejamento.mes)} {planejamento.ano} - {planejamento.quinzena}ª Quinzena ({DateHelpers.formatarPeriodo(planejamento.periodoInicio, planejamento.periodoFim)})</p>
-                  <p>👩‍🏫 Professor(a): {professor.nome}</p>
-                  <p>📅 Criado em: {DateHelpers.formatarDataHora(planejamento.criadoEm)}</p>
-                  {planejamento.enviadoEm && (
-                    <p>📤 Enviado em: {DateHelpers.formatarDataHora(planejamento.enviadoEm)}</p>
-                  )}
-                  {planejamento.revisadoEm && (
-                    <p>✅ Revisado em: {DateHelpers.formatarDataHora(planejamento.revisadoEm)}</p>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-hover rounded-lg transition-all text-text-muted hover:text-text-primary active:scale-95"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-          </div>
-
-          {/* Conteúdo */}
-          <div className="p-8 space-y-6 bg-surface">
-            {/* Título */}
-            <Section title="📋 TÍTULO">
-              <p className="text-lg font-semibold text-text-primary">{planejamento.titulo}</p>
-            </Section>
-
-            {/* Disciplinas e Turmas */}
-            <div className="grid md:grid-cols-2 gap-6">
-              <Section title="📚 DISCIPLINAS">
-                <div className="flex flex-wrap gap-2">
-                  {planejamento.disciplinas.map(disc => (
-                    <Badge key={disc} variant="info">{disc}</Badge>
-                  ))}
-                </div>
-              </Section>
-
-              <Section title="👥 TURMAS">
-                <div className="flex flex-wrap gap-2">
-                  {planejamento.turmas.map(turma => (
-                    <Badge key={turma} variant="info">{turma}</Badge>
-                  ))}
-                </div>
-              </Section>
-            </div>
-
-            {/* Experiência de Aprendizagem */}
-            <Section title="🎯 EXPERIÊNCIA DE APRENDIZAGEM">
-              <p className="text-text-secondary whitespace-pre-wrap leading-relaxed">
-                {planejamento.experienciaAprendizagem}
-              </p>
-            </Section>
-
-            {/* Objetivos */}
-            <Section title="🎓 OBJETIVOS DE APRENDIZAGEM">
-              <ul className="space-y-3">
-                {planejamento.objetivos.map((obj, index) => (
-                  <li key={obj.id} className="flex items-start gap-3">
-                    <span className="flex-shrink-0 flex items-center justify-center w-7 h-7 bg-primary text-on-primary rounded-full text-sm font-bold">
-                      {index + 1}
-                    </span>
-                    <div className="flex-1">
-                      <p className="text-text-secondary font-medium">{obj.texto}</p>
-                      {obj.atingido && (
-                        <span className="inline-flex items-center gap-1 text-sm text-success mt-1 font-medium">
-                          <CheckCircle2 className="w-4 h-4" />
-                          Objetivo atingido
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-
-            {/* Recursos Necessários */}
-            {planejamento.recursosNecessarios.length > 0 && (
-              <Section title="🛠️ RECURSOS NECESSÁRIOS">
-                <div className="flex flex-wrap gap-2">
-                  {planejamento.recursosNecessarios.map(recurso => (
-                    <span key={recurso} className="px-3 py-1.5 bg-elevated border-2 border-base text-text-secondary rounded-lg text-sm font-medium shadow-sm">
-                      • {recurso}
-                    </span>
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {/* Metodologia de Avaliação */}
-            <Section title="📊 METODOLOGIA DE AVALIAÇÃO">
-              <p className="text-text-secondary whitespace-pre-wrap leading-relaxed mb-4">
-                {planejamento.metodologiaAvaliacao}
-              </p>
-              {planejamento.instrumentosAvaliacao.length > 0 && (
-                <>
-                  <p className="font-semibold text-text-primary mb-2">Instrumentos:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {planejamento.instrumentosAvaliacao.map(inst => (
-                      <Badge key={inst} variant="info">{inst}</Badge>
-                    ))}
-                  </div>
-                </>
-              )}
-            </Section>
-
-            {/* Conclusão */}
-            <Section title="✅ CONCLUSÃO E RESULTADOS ESPERADOS">
-              <p className="text-text-secondary whitespace-pre-wrap leading-relaxed">
-                {planejamento.conclusao}
-              </p>
-            </Section>
-
-            {/* Referências */}
-            <Section title="📚 REFERÊNCIAS BIBLIOGRÁFICAS">
-              <ol className="space-y-2">
-                {planejamento.referencias.map((ref, index) => (
-                  <li key={index} className="text-sm text-text-secondary">
-                    <span className="font-bold">{index + 1}.</span> {ref}
-                  </li>
-                ))}
-              </ol>
-            </Section>
-
-            {/* Observações */}
-            {planejamento.observacoes && (
-              <Section title="📝 OBSERVAÇÕES ADICIONAIS">
-                <p className="text-text-secondary whitespace-pre-wrap leading-relaxed italic">
-                  {planejamento.observacoes}
-                </p>
-              </Section>
-            )}
-
-            {/* Considerações do Diretor */}
-            {planejamento.consideracoesDiretor && (
-              <div className={`p-6 rounded-lg border-2 shadow-md ${
-                planejamento.status === 'ajustes_solicitados'
-                  ? 'bg-danger/10 border-danger'
-                  : 'bg-success/10 border-success'
-              }`}>
-                <div className="flex items-center gap-2 mb-3">
-                  <h3 className="text-xl font-bold text-text-primary">
-                    💬 CONSIDERAÇÕES DO DIRETOR
-                  </h3>
-                  {planejamento.avaliacaoDiretor && (
-                    <span className="text-warning">
-                      {'⭐'.repeat(planejamento.avaliacaoDiretor)}
-                    </span>
-                  )}
-                </div>
-                <p className="text-text-secondary whitespace-pre-wrap leading-relaxed">
-                  {planejamento.consideracoesDiretor}
-                </p>
-                <p className="text-sm text-text-muted mt-3">
-                  📅 {DateHelpers.formatarDataHora(planejamento.revisadoEm || planejamento.atualizadoEm)}
-                </p>
-                {planejamento.prazoAjustes && (
-                  <p className="text-sm text-danger mt-2 font-semibold">
-                    ⏰ Prazo para ajustes: {DateHelpers.formatarDataHora(planejamento.prazoAjustes)}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="sticky bottom-0 bg-surface border-t-2 border-base px-6 py-4 flex items-center justify-between rounded-b-2xl shadow-lg">
-            <Button variant="ghost" onClick={onClose}>
-              Fechar
+    <Modal
+      isOpen
+      onClose={onClose}
+      title={planejamento.titulo || 'Planejamento sem título'}
+      subtitle={`${DateHelpers.getNomeMes(planejamento.mes)} ${planejamento.ano} · ${planejamento.quinzena}ª Quinzena (${DateHelpers.formatarPeriodo(planejamento.periodoInicio, planejamento.periodoFim)}) · v${planejamento.versao}`}
+      size="lg"
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          <Button variant="ghost" onClick={onClose}>
+            Fechar
+          </Button>
+          {permissaoEdicao.permitido && (
+            <Button variant="primary" onClick={() => onEditar(planejamento.id)}>
+              <Edit3 className="w-4 h-4" aria-hidden="true" />
+              {planejamento.status === 'ajustes_solicitados'
+                ? 'Corrigir e reenviar'
+                : 'Editar planejamento'}
             </Button>
-
-            {podeEditar && (
-              <Button variant="primary" onClick={() => onEditar(planejamento.id)}>
-                <Edit className="w-5 h-5" />
-                Editar Planejamento
-              </Button>
+          )}
+        </div>
+      }
+    >
+      <div className="space-y-6">
+        {/* Metadados */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-xl bg-elevated border border-base">
+          <div className="text-xs sm:text-sm text-secondary space-y-1">
+            <p>
+              <strong className="text-primary">Professor responsável:</strong> {professor.nome}
+            </p>
+            <p>
+              <strong className="text-primary">Criado em:</strong>{' '}
+              {DateHelpers.formatarDataHora(planejamento.criadoEm)}
+            </p>
+            {planejamento.enviadoEm && (
+              <p>
+                <strong className="text-primary">Enviado em:</strong>{' '}
+                {DateHelpers.formatarDataHora(planejamento.enviadoEm)}
+              </p>
+            )}
+            {planejamento.reenviadoEm && (
+              <p>
+                <strong className="text-primary">Último reenvio:</strong>{' '}
+                {DateHelpers.formatarDataHora(planejamento.reenviadoEm)}
+              </p>
+            )}
+            {planejamento.revisadoEm && (
+              <p>
+                <strong className="text-primary">Última revisão:</strong>{' '}
+                {DateHelpers.formatarDataHora(planejamento.revisadoEm)}
+              </p>
             )}
           </div>
+          <StatusBadge status={planejamento.status} size="lg" />
         </div>
+
+        {/* Destaque das considerações recentes da direção */}
+        {planejamento.consideracoesDiretor && (
+          <div
+            className={`p-4 rounded-xl border ${
+              planejamento.status === 'ajustes_solicitados'
+                ? 'bg-danger/10 border-danger/30'
+                : 'bg-success/10 border-success/30'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <h3 className="text-sm font-bold text-primary">Considerações mais recentes da direção</h3>
+              {planejamento.avaliacaoDiretor && (
+                <div
+                  className="inline-flex items-center gap-0.5 text-warning"
+                  aria-label={`Avaliação: ${planejamento.avaliacaoDiretor} de 5 estrelas`}
+                >
+                  {Array.from({ length: planejamento.avaliacaoDiretor }).map((_, idx) => (
+                    <Star key={idx} className="w-4 h-4 fill-current" aria-hidden="true" />
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-sm text-primary whitespace-pre-wrap leading-relaxed">
+              {planejamento.consideracoesDiretor}
+            </p>
+            {planejamento.prazoAjustes && planejamento.status === 'ajustes_solicitados' && (
+              <p className="text-xs font-semibold text-danger mt-2">
+                Prazo sugerido para ajustes: {DateHelpers.formatarDataHora(planejamento.prazoAjustes)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Disciplinas e Turmas */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Section title="Disciplinas">
+            {planejamento.disciplinas.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {planejamento.disciplinas.map(disc => (
+                  <Badge key={disc} variant="info">
+                    {disc}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted italic">Não informado.</p>
+            )}
+          </Section>
+
+          <Section title="Turmas">
+            {planejamento.turmas.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {planejamento.turmas.map(turma => (
+                  <Badge key={turma} variant="gray">
+                    {turma}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted italic">Não informado.</p>
+            )}
+          </Section>
+        </div>
+
+        <Section title="Experiência de aprendizagem">
+          <p className="text-sm text-secondary whitespace-pre-wrap leading-relaxed">
+            {planejamento.experienciaAprendizagem || 'Não preenchido.'}
+          </p>
+        </Section>
+
+        <Section title="Objetivos de aprendizagem">
+          {planejamento.objetivos.length > 0 ? (
+            <ol className="space-y-2">
+              {planejamento.objetivos.map((obj, index) => (
+                <li key={obj.id} className="flex items-start gap-2.5 text-sm">
+                  <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
+                    {index + 1}
+                  </span>
+                  <div className="flex-1">
+                    <p className="text-primary">{obj.texto}</p>
+                    {obj.atingido && (
+                      <span className="inline-flex items-center gap-1 text-xs text-success mt-0.5 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                        Objetivo marcado como atingido
+                      </span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-sm text-muted italic">Nenhum objetivo cadastrado.</p>
+          )}
+        </Section>
+
+        {planejamento.recursosNecessarios.length > 0 && (
+          <Section title="Recursos necessários">
+            <div className="flex flex-wrap gap-1.5">
+              {planejamento.recursosNecessarios.map(recurso => (
+                <Badge key={recurso} variant="gray">
+                  {recurso}
+                </Badge>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        <Section title="Metodologia de avaliação">
+          <p className="text-sm text-secondary whitespace-pre-wrap leading-relaxed">
+            {planejamento.metodologiaAvaliacao || 'Não preenchido.'}
+          </p>
+          {planejamento.instrumentosAvaliacao.length > 0 && (
+            <div className="mt-3">
+              <p className="text-xs font-semibold text-muted uppercase mb-1.5">Instrumentos</p>
+              <div className="flex flex-wrap gap-1.5">
+                {planejamento.instrumentosAvaliacao.map(inst => (
+                  <Badge key={inst} variant="info">
+                    {inst}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+        </Section>
+
+        <Section title="Conclusão e resultados esperados">
+          <p className="text-sm text-secondary whitespace-pre-wrap leading-relaxed">
+            {planejamento.conclusao || 'Não preenchido.'}
+          </p>
+        </Section>
+
+        <Section title="Referências bibliográficas">
+          {planejamento.referencias.length > 0 ? (
+            <ol className="list-decimal list-inside space-y-1.5 text-sm text-secondary">
+              {planejamento.referencias.map((ref, index) => (
+                <li key={index}>{ref}</li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-sm text-muted italic">Nenhuma referência informada.</p>
+          )}
+        </Section>
+
+        {planejamento.observacoes && (
+          <Section title="Observações adicionais">
+            <p className="text-sm text-secondary whitespace-pre-wrap italic">
+              {planejamento.observacoes}
+            </p>
+          </Section>
+        )}
+
+        <Section title="Histórico de envios e revisões">
+          <HistoricoTimeline itens={planejamento.historicoConsideracoes} />
+        </Section>
       </div>
-    </div>
+    </Modal>
   );
 };
 
-// Componente auxiliar para seções
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div>
-    <h3 className="text-lg font-bold text-text-primary mb-3 pb-2 border-b-2 border-base">
+    <h3 className="text-xs font-bold uppercase tracking-wide text-muted mb-2 pb-1.5 border-b border-base">
       {title}
     </h3>
     {children}
   </div>
 );
-

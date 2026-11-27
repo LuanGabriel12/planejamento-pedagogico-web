@@ -1,33 +1,102 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { AppState, Planejamento, Notificacao } from '../types';
-import { estadoInicial } from '../data/initialData';
-import { StorageHelpers } from '../utils/storageHelpers';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  ReactNode
+} from 'react';
 import toast from 'react-hot-toast';
-import { Usuario } from  '../models/auth/users.model'; 
+import {
+  AppState,
+  Planejamento,
+  PlanejamentoFormularioInput,
+  ResultadoOperacao,
+  StatusPersistencia
+} from '../types';
+import { Usuario } from '../models/auth/users.model';
+import { ANOS_DISPONIVEIS, criarEstadoInicial } from '../data/initialData';
+import {
+  adicionarComentarioDirecao,
+  aprovarPlanejamento,
+  enviarParaRevisao,
+  excluirRascunho,
+  salvarRascunho,
+  solicitarAjustes
+} from '../domain/planningService';
+import {
+  carregarEstadoStorage,
+  exportarDadosJson,
+  restaurarEstadoDemonstrativoStorage,
+  salvarEstadoStorage
+} from '../persistence/storage';
 
-// Tipo do contexto
+export interface InfoPersistencia {
+  status: StatusPersistencia;
+  escritaBloqueadaPorFalhaLeitura: boolean;
+  mensagem?: string;
+  chaveOrigem?: string;
+  dadoBrutoCorrompido?: string;
+  avisos: string[];
+  erroUltimaGravacao?: string;
+}
+
 interface AppContextType {
   estado: AppState;
   usuarioLogado: Usuario | null;
-  
-  // Autenticação
-  login: (usuarioId: string) => void;
-  logout: () => void;
-  
-  // Planejamentos
-  adicionarPlanejamento: (planejamento: Omit<Planejamento, 'id'>) => string;
-  atualizarPlanejamento: (id: string, dados: Partial<Planejamento>) => void;
-  removerPlanejamento: (id: string) => void;
-  
+  persistencia: InfoPersistencia;
+
+  // Seleção de perfil simulado
+  login: (usuarioId: string) => ResultadoOperacao;
+  logout: () => ResultadoOperacao;
+
+  // Fluxo do professor
+  salvarRascunhoPlanejamento: (params: {
+    planejamentoId?: string;
+    ano: number;
+    mes: number;
+    quinzena: 1 | 2;
+    dados: PlanejamentoFormularioInput;
+    silencioso?: boolean;
+  }) => ResultadoOperacao<{ planejamento: Planejamento; criado: boolean }>;
+  enviarPlanejamentoParaRevisao: (params: {
+    planejamentoId?: string;
+    ano: number;
+    mes: number;
+    quinzena: 1 | 2;
+    dados: PlanejamentoFormularioInput;
+  }) => ResultadoOperacao<{ planejamento: Planejamento; criado: boolean }>;
+  excluirRascunhoPlanejamento: (planejamentoId: string) => ResultadoOperacao;
+
+  // Fluxo da direção
+  aprovarPlanejamentoDirecao: (params: {
+    planejamentoId: string;
+    feedback: string;
+    avaliacao?: number;
+  }) => ResultadoOperacao<{ planejamento: Planejamento }>;
+  solicitarAjustesDirecao: (params: {
+    planejamentoId: string;
+    feedback: string;
+    avaliacao?: number;
+  }) => ResultadoOperacao<{ planejamento: Planejamento }>;
+  comentarPlanejamentoDirecao: (params: {
+    planejamentoId: string;
+    feedback: string;
+  }) => ResultadoOperacao<{ planejamento: Planejamento }>;
+
   // Notificações
-  adicionarNotificacao: (notificacao: Omit<Notificacao, 'id'>) => void;
   marcarNotificacaoLida: (id: string) => void;
   marcarTodasLidas: () => void;
-  
-  // Configurações
+
+  // Configurações e dados demonstrativos
   mudarAno: (ano: number) => void;
-  
-  // Navegação
+  tentarRecarregarStorage: () => ResultadoOperacao;
+  restaurarDadosDemonstrativos: () => ResultadoOperacao<{ ressalva?: string }>;
+  exportarDados: () => void;
+  descartarAvisoPersistencia: () => void;
+
+  // Navegação por notificação
   planejamentoParaAbrir: string | null;
   abrirPlanejamento: (id: string) => void;
   limparPlanejamentoParaAbrir: () => void;
@@ -36,149 +105,491 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [estado, setEstado] = useState<AppState>(() => {
-    const salvo = StorageHelpers.carregar();
-    return salvo || estadoInicial;
+  const cargaInicial = useRef(carregarEstadoStorage());
+  const [estado, setEstado] = useState<AppState>(() => cargaInicial.current.state);
+  const estadoRef = useRef<AppState>(estado);
+  estadoRef.current = estado;
+
+  const [persistencia, setPersistencia] = useState<InfoPersistencia>(() => {
+    const res = cargaInicial.current;
+    return {
+      status: res.status,
+      escritaBloqueadaPorFalhaLeitura:
+        res.status === 'corrupted' || res.status === 'storage_unavailable',
+      mensagem: res.message,
+      chaveOrigem: res.rawKey,
+      dadoBrutoCorrompido: res.rawCorruptedValue,
+      avisos: res.warnings
+    };
   });
-  
+
+  const persistenciaRef = useRef<InfoPersistencia>(persistencia);
+  persistenciaRef.current = persistencia;
+
   const [planejamentoParaAbrir, setPlanejamentoParaAbrir] = useState<string | null>(null);
 
+  // Grava o estado migrado da V1 na chave V2 (sem tocar na chave V1) ou inicializa primeiro acesso limpo.
+  // Nunca grava automaticamente quando há corrupção ou falha de leitura (storage_unavailable)!
   useEffect(() => {
-    StorageHelpers.salvar(estado);
-  }, [estado]);
+    const statusInicial = cargaInicial.current.status;
+    if (statusInicial === 'migrated_v1' || statusInicial === 'empty') {
+      const gravacao = salvarEstadoStorage(estadoRef.current);
+      if (!gravacao.ok) {
+        setPersistencia(prev => ({
+          ...prev,
+          erroUltimaGravacao: gravacao.message
+        }));
+      }
+    }
+  }, []);
 
-  // Usuário logado
-  const usuarioLogado = estado.sessaoAtual
-    ? estado.usuarios.find(u => u.id === estado.sessaoAtual?.usuarioId) || null
-    : null;
+  /**
+   * Aplica e persiste uma transição de estado com proteção contra sobrescrita:
+   * - Se houve falha de leitura (corrupted ou storage_unavailable), bloqueia sobrescrita automática
+   *   até recuperação bem-sucedida ou decisão explícita do usuário.
+   * - Se a gravação no localStorage falhar, NÃO altera o estado nem informa sucesso falso.
+   */
+  const persistirEAtualizar = useCallback(
+    (proximoEstado: AppState): ResultadoOperacao => {
+      if (persistenciaRef.current.escritaBloqueadaPorFalhaLeitura) {
+        const ehCorrompido = persistenciaRef.current.status === 'corrupted';
+        const erro = ehCorrompido
+          ? 'A gravação está pausada para proteger dados corrompidos existentes no navegador. Exporte ou restaure os dados demonstrativos no aviso superior.'
+          : 'A gravação está pausada após falha de leitura do armazenamento local para evitar sobrescrita acidental. Tente ler novamente ou restaure explicitamente no aviso superior.';
+        toast.error(erro);
+        return { ok: false, erro };
+      }
 
-  // LOGIN
-  const login = (usuarioId: string) => {
-    const usuario = estado.usuarios.find(u => u.id === usuarioId);
-    if (!usuario) {
-      toast.error('Usuário não encontrado');
-      return;
+      const gravacao = salvarEstadoStorage(proximoEstado);
+      if (!gravacao.ok) {
+        setPersistencia(prev => ({
+          ...prev,
+          erroUltimaGravacao: gravacao.message
+        }));
+        toast.error(gravacao.message);
+        return { ok: false, erro: gravacao.message };
+      }
+
+      estadoRef.current = proximoEstado;
+      setEstado(proximoEstado);
+      if (persistenciaRef.current.erroUltimaGravacao) {
+        setPersistencia(prev => ({ ...prev, erroUltimaGravacao: undefined }));
+      }
+      return { ok: true, dados: undefined };
+    },
+    []
+  );
+
+  const obterUsuarioAtual = useCallback((stateAtual: AppState): Usuario | null => {
+    if (!stateAtual.sessaoAtual) return null;
+    return stateAtual.usuarios.find(u => u.id === stateAtual.sessaoAtual?.usuarioId) || null;
+  }, []);
+
+  const usuarioLogado = obterUsuarioAtual(estado);
+
+  const login = useCallback(
+    (usuarioId: string): ResultadoOperacao => {
+      const atual = estadoRef.current;
+      const usuario = atual.usuarios.find(u => u.id === usuarioId);
+      if (!usuario) {
+        const erro = 'Perfil fictício não encontrado.';
+        toast.error(erro);
+        return { ok: false, erro };
+      }
+
+      const proximoEstado: AppState = {
+        ...atual,
+        sessaoAtual: {
+          usuarioId: usuario.id,
+          loginEm: new Date().toISOString()
+        }
+      };
+
+      // Permite navegar na interface em modo leitura mesmo se storage estiver protegido por falha de leitura
+      if (persistenciaRef.current.escritaBloqueadaPorFalhaLeitura) {
+        estadoRef.current = proximoEstado;
+        setEstado(proximoEstado);
+        toast(`Sessão simulada aberta em modo somente leitura (${usuario.nome}).`);
+        return { ok: true, dados: undefined };
+      }
+
+      const res = persistirEAtualizar(proximoEstado);
+      if (!res.ok) return res;
+
+      toast.success(`Perfil ativo: ${usuario.nome}`);
+      return { ok: true, dados: undefined };
+    },
+    [persistirEAtualizar]
+  );
+
+  const logout = useCallback((): ResultadoOperacao => {
+    const proximoEstado: AppState = {
+      ...estadoRef.current,
+      sessaoAtual: null
+    };
+
+    if (persistenciaRef.current.escritaBloqueadaPorFalhaLeitura) {
+      estadoRef.current = proximoEstado;
+      setEstado(proximoEstado);
+      return { ok: true, dados: undefined };
     }
 
-    setEstado(prev => ({
-      ...prev,
-      sessaoAtual: {
-        usuarioId: usuario.id,
-        loginEm: new Date().toISOString()
+    const res = persistirEAtualizar(proximoEstado);
+    if (!res.ok) return res;
+
+    toast.success('Sessão simulada encerrada.');
+    return { ok: true, dados: undefined };
+  }, [persistirEAtualizar]);
+
+  const salvarRascunhoPlanejamento = useCallback(
+    (params: {
+      planejamentoId?: string;
+      ano: number;
+      mes: number;
+      quinzena: 1 | 2;
+      dados: PlanejamentoFormularioInput;
+      silencioso?: boolean;
+    }): ResultadoOperacao<{ planejamento: Planejamento; criado: boolean }> => {
+      const atual = estadoRef.current;
+      const usuario = obterUsuarioAtual(atual);
+      const resultadoDominio = salvarRascunho(atual, usuario, params);
+
+      if (!resultadoDominio.ok) {
+        if (!params.silencioso) {
+          toast.error(resultadoDominio.erro);
+        }
+        return resultadoDominio;
       }
-    }));
 
-    toast.success(`Bem-vindo(a), ${usuario.nome}! 👋`);
-  };
+      const persistido = persistirEAtualizar(resultadoDominio.dados.estado);
+      if (!persistido.ok) {
+        return { ok: false, erro: persistido.erro };
+      }
 
-  // LOGOUT
-  const logout = () => {
-    setEstado(prev => ({ ...prev, sessaoAtual: null }));
-    toast.success('Até logo! 👋');
-  };
+      if (!params.silencioso) {
+        const ehAjuste = resultadoDominio.dados.planejamento.status === 'ajustes_solicitados';
+        toast.success(
+          ehAjuste
+            ? 'Alterações salvas. Quando concluir, clique em Reenviar para Revisão.'
+            : 'Rascunho salvo no navegador.'
+        );
+      }
 
-  // ADICIONAR PLANEJAMENTO
-  const adicionarPlanejamento = (planejamento: Omit<Planejamento, 'id'>): string => {
-    const id = `plan_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const novo: Planejamento = { ...planejamento, id };
+      return {
+        ok: true,
+        dados: {
+          planejamento: resultadoDominio.dados.planejamento,
+          criado: resultadoDominio.dados.criado
+        }
+      };
+    },
+    [obterUsuarioAtual, persistirEAtualizar]
+  );
 
-    setEstado(prev => ({
-      ...prev,
-      planejamentos: [...prev.planejamentos, novo]
-    }));
+  const enviarPlanejamentoParaRevisao = useCallback(
+    (params: {
+      planejamentoId?: string;
+      ano: number;
+      mes: number;
+      quinzena: 1 | 2;
+      dados: PlanejamentoFormularioInput;
+    }): ResultadoOperacao<{ planejamento: Planejamento; criado: boolean }> => {
+      const atual = estadoRef.current;
+      const usuario = obterUsuarioAtual(atual);
+      const existenteAntes = params.planejamentoId
+        ? atual.planejamentos.find(p => p.id === params.planejamentoId)
+        : undefined;
+      const ehReenvio = existenteAntes?.status === 'ajustes_solicitados';
 
-    toast.success('Planejamento criado com sucesso! ✓');
-    return id;
-  };
+      const resultadoDominio = enviarParaRevisao(atual, usuario, params);
+      if (!resultadoDominio.ok) {
+        toast.error(resultadoDominio.erro);
+        return resultadoDominio;
+      }
 
-  // ATUALIZAR PLANEJAMENTO
-  const atualizarPlanejamento = (id: string, dados: Partial<Planejamento>) => {
-    setEstado(prev => ({
-      ...prev,
-      planejamentos: prev.planejamentos.map(p =>
-        p.id === id ? { ...p, ...dados, atualizadoEm: new Date().toISOString() } : p
+      const persistido = persistirEAtualizar(resultadoDominio.dados.estado);
+      if (!persistido.ok) {
+        return { ok: false, erro: persistido.erro };
+      }
+
+      toast.success(
+        ehReenvio
+          ? 'Planejamento corrigido e reenviado para revisão.'
+          : 'Planejamento enviado para revisão.'
+      );
+
+      return {
+        ok: true,
+        dados: {
+          planejamento: resultadoDominio.dados.planejamento,
+          criado: resultadoDominio.dados.criado
+        }
+      };
+    },
+    [obterUsuarioAtual, persistirEAtualizar]
+  );
+
+  const excluirRascunhoPlanejamento = useCallback(
+    (planejamentoId: string): ResultadoOperacao => {
+      const atual = estadoRef.current;
+      const usuario = obterUsuarioAtual(atual);
+      const resultadoDominio = excluirRascunho(atual, usuario, planejamentoId);
+
+      if (!resultadoDominio.ok) {
+        toast.error(resultadoDominio.erro);
+        return resultadoDominio;
+      }
+
+      const persistido = persistirEAtualizar(resultadoDominio.dados);
+      if (!persistido.ok) return persistido;
+
+      toast.success('Rascunho removido.');
+      return { ok: true, dados: undefined };
+    },
+    [obterUsuarioAtual, persistirEAtualizar]
+  );
+
+  const aprovarPlanejamentoDirecao = useCallback(
+    (params: {
+      planejamentoId: string;
+      feedback: string;
+      avaliacao?: number;
+    }): ResultadoOperacao<{ planejamento: Planejamento }> => {
+      const atual = estadoRef.current;
+      const usuario = obterUsuarioAtual(atual);
+      const resultadoDominio = aprovarPlanejamento(atual, usuario, params);
+
+      if (!resultadoDominio.ok) {
+        toast.error(resultadoDominio.erro);
+        return resultadoDominio;
+      }
+
+      const persistido = persistirEAtualizar(resultadoDominio.dados.estado);
+      if (!persistido.ok) return { ok: false, erro: persistido.erro };
+
+      toast.success('Planejamento aprovado na simulação.');
+      return { ok: true, dados: { planejamento: resultadoDominio.dados.planejamento } };
+    },
+    [obterUsuarioAtual, persistirEAtualizar]
+  );
+
+  const solicitarAjustesDirecao = useCallback(
+    (params: {
+      planejamentoId: string;
+      feedback: string;
+      avaliacao?: number;
+    }): ResultadoOperacao<{ planejamento: Planejamento }> => {
+      const atual = estadoRef.current;
+      const usuario = obterUsuarioAtual(atual);
+      const resultadoDominio = solicitarAjustes(atual, usuario, params);
+
+      if (!resultadoDominio.ok) {
+        toast.error(resultadoDominio.erro);
+        return resultadoDominio;
+      }
+
+      const persistido = persistirEAtualizar(resultadoDominio.dados.estado);
+      if (!persistido.ok) return { ok: false, erro: persistido.erro };
+
+      toast.success('Solicitação de ajustes registrada.');
+      return { ok: true, dados: { planejamento: resultadoDominio.dados.planejamento } };
+    },
+    [obterUsuarioAtual, persistirEAtualizar]
+  );
+
+  const comentarPlanejamentoDirecao = useCallback(
+    (params: {
+      planejamentoId: string;
+      feedback: string;
+    }): ResultadoOperacao<{ planejamento: Planejamento }> => {
+      const atual = estadoRef.current;
+      const usuario = obterUsuarioAtual(atual);
+      const resultadoDominio = adicionarComentarioDirecao(atual, usuario, params);
+
+      if (!resultadoDominio.ok) {
+        toast.error(resultadoDominio.erro);
+        return resultadoDominio;
+      }
+
+      const persistido = persistirEAtualizar(resultadoDominio.dados.estado);
+      if (!persistido.ok) return { ok: false, erro: persistido.erro };
+
+      toast.success('Comentário registrado no histórico.');
+      return { ok: true, dados: { planejamento: resultadoDominio.dados.planejamento } };
+    },
+    [obterUsuarioAtual, persistirEAtualizar]
+  );
+
+  const marcarNotificacaoLida = useCallback(
+    (id: string) => {
+      const atual = estadoRef.current;
+      const proximoEstado: AppState = {
+        ...atual,
+        notificacoes: atual.notificacoes.map(n => (n.id === id ? { ...n, lida: true } : n))
+      };
+      persistirEAtualizar(proximoEstado);
+    },
+    [persistirEAtualizar]
+  );
+
+  const marcarTodasLidas = useCallback(() => {
+    const atual = estadoRef.current;
+    const usuario = obterUsuarioAtual(atual);
+    if (!usuario) return;
+
+    const proximoEstado: AppState = {
+      ...atual,
+      notificacoes: atual.notificacoes.map(n =>
+        n.usuarioId === usuario.id ? { ...n, lida: true } : n
       )
-    }));
+    };
+    const res = persistirEAtualizar(proximoEstado);
+    if (res.ok) {
+      toast.success('Notificações marcadas como lidas.');
+    }
+  }, [obterUsuarioAtual, persistirEAtualizar]);
 
-    toast.success('Planejamento atualizado! ✓');
-  };
+  const mudarAno = useCallback(
+    (ano: number) => {
+      if (!(ANOS_DISPONIVEIS as readonly number[]).includes(ano)) return;
+      const atual = estadoRef.current;
+      const proximoEstado: AppState = {
+        ...atual,
+        configuracoes: { ...atual.configuracoes, anoAtual: ano }
+      };
+      if (persistenciaRef.current.escritaBloqueadaPorFalhaLeitura) {
+        estadoRef.current = proximoEstado;
+        setEstado(proximoEstado);
+        return;
+      }
+      persistirEAtualizar(proximoEstado);
+    },
+    [persistirEAtualizar]
+  );
 
-  // REMOVER PLANEJAMENTO
-  const removerPlanejamento = (id: string) => {
-    if (!confirm('Tem certeza que deseja remover este planejamento?')) return;
+  const tentarRecarregarStorage = useCallback((): ResultadoOperacao => {
+    const res = carregarEstadoStorage();
+    const aindaBloqueado =
+      res.status === 'corrupted' || res.status === 'storage_unavailable';
 
-    setEstado(prev => ({
+    if (aindaBloqueado) {
+      const novaPersistencia: InfoPersistencia = {
+        status: res.status,
+        escritaBloqueadaPorFalhaLeitura: true,
+        mensagem: res.message,
+        chaveOrigem: res.rawKey,
+        dadoBrutoCorrompido: res.rawCorruptedValue,
+        avisos: res.warnings
+      };
+      persistenciaRef.current = novaPersistencia;
+      setPersistencia(novaPersistencia);
+      const erro = res.message || 'O armazenamento local continua indisponível para leitura.';
+      toast.error(erro);
+      return { ok: false, erro };
+    }
+
+    if (res.status === 'migrated_v1' || res.status === 'empty') {
+      const gravacao = salvarEstadoStorage(res.state);
+      if (!gravacao.ok) {
+        setPersistencia(prev => ({
+          ...prev,
+          erroUltimaGravacao: gravacao.message
+        }));
+        toast.error(gravacao.message);
+        return { ok: false, erro: gravacao.message };
+      }
+    }
+
+    estadoRef.current = res.state;
+    setEstado(res.state);
+    const novaPersistencia: InfoPersistencia = {
+      status: res.status,
+      escritaBloqueadaPorFalhaLeitura: false,
+      mensagem: res.message,
+      chaveOrigem: res.rawKey,
+      avisos: res.warnings
+    };
+    persistenciaRef.current = novaPersistencia;
+    setPersistencia(novaPersistencia);
+    toast.success('Leitura do armazenamento local restabelecida.');
+    return { ok: true, dados: undefined };
+  }, []);
+
+  const restaurarDadosDemonstrativos = useCallback((): ResultadoOperacao<{
+    ressalva?: string;
+  }> => {
+    const limpo = criarEstadoInicial();
+    const resultado = restaurarEstadoDemonstrativoStorage(limpo);
+    if (!resultado.ok) {
+      setPersistencia(prev => ({
+        ...prev,
+        erroUltimaGravacao: resultado.message
+      }));
+      toast.error(resultado.message);
+      return { ok: false, erro: resultado.message };
+    }
+
+    estadoRef.current = limpo;
+    setEstado(limpo);
+    const novaPersistencia: InfoPersistencia = {
+      status: 'ok',
+      escritaBloqueadaPorFalhaLeitura: false,
+      mensagem: resultado.cleanupWarning,
+      avisos: resultado.cleanupWarning ? [resultado.cleanupWarning] : []
+    };
+    persistenciaRef.current = novaPersistencia;
+    setPersistencia(novaPersistencia);
+
+    if (resultado.cleanupWarning) {
+      toast(resultado.cleanupWarning);
+      return { ok: true, dados: { ressalva: resultado.cleanupWarning } };
+    }
+
+    toast.success('Dados demonstrativos restaurados.');
+    return { ok: true, dados: {} };
+  }, []);
+
+  const exportarDados = useCallback(() => {
+    exportarDadosJson(estadoRef.current);
+    toast.success('Arquivo JSON exportado.');
+  }, []);
+
+  const descartarAvisoPersistencia = useCallback(() => {
+    setPersistencia(prev => ({
       ...prev,
-      planejamentos: prev.planejamentos.filter(p => p.id !== id)
+      mensagem: undefined,
+      avisos: [],
+      erroUltimaGravacao: undefined
     }));
+  }, []);
 
-    toast.success('Planejamento removido!');
-  };
-
-  // ADICIONAR NOTIFICAÇÃO
-  const adicionarNotificacao = (notificacao: Omit<Notificacao, 'id'>) => {
-    const id = `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const nova: Notificacao = { ...notificacao, id };
-
-    setEstado(prev => ({
-      ...prev,
-      notificacoes: [...prev.notificacoes, nova]
-    }));
-  };
-
-  // MARCAR NOTIFICAÇÃO COMO LIDA
-  const marcarNotificacaoLida = (id: string) => {
-    setEstado(prev => ({
-      ...prev,
-      notificacoes: prev.notificacoes.map(n =>
-        n.id === id ? { ...n, lida: true } : n
-      )
-    }));
-  };
-
-  // MARCAR TODAS COMO LIDAS
-  const marcarTodasLidas = () => {
-    if (!usuarioLogado) return;
-
-    setEstado(prev => ({
-      ...prev,
-      notificacoes: prev.notificacoes.map(n =>
-        n.usuarioId === usuarioLogado.id ? { ...n, lida: true } : n
-      )
-    }));
-
-    toast.success('Todas marcadas como lidas');
-  };
-
-  // MUDAR ANO
-  const mudarAno = (ano: number) => {
-    setEstado(prev => ({
-      ...prev,
-      configuracoes: { ...prev.configuracoes, anoAtual: ano }
-    }));
-  };
-  
-  // NAVEGAÇÃO - Abrir planejamento
-  const abrirPlanejamento = (id: string) => {
+  const abrirPlanejamento = useCallback((id: string) => {
     setPlanejamentoParaAbrir(id);
-  };
-  
-  const limparPlanejamentoParaAbrir = () => {
+  }, []);
+
+  const limparPlanejamentoParaAbrir = useCallback(() => {
     setPlanejamentoParaAbrir(null);
-  };
+  }, []);
 
   const value: AppContextType = {
     estado,
     usuarioLogado,
+    persistencia,
     login,
     logout,
-    adicionarPlanejamento,
-    atualizarPlanejamento,
-    removerPlanejamento,
-    adicionarNotificacao,
+    salvarRascunhoPlanejamento,
+    enviarPlanejamentoParaRevisao,
+    excluirRascunhoPlanejamento,
+    aprovarPlanejamentoDirecao,
+    solicitarAjustesDirecao,
+    comentarPlanejamentoDirecao,
     marcarNotificacaoLida,
     marcarTodasLidas,
     mudarAno,
+    tentarRecarregarStorage,
+    restaurarDadosDemonstrativos,
+    exportarDados,
+    descartarAvisoPersistencia,
     planejamentoParaAbrir,
     abrirPlanejamento,
     limparPlanejamentoParaAbrir
@@ -187,7 +598,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 
-// Hook personalizado
 export const useApp = () => {
   const context = useContext(AppContext);
   if (!context) {

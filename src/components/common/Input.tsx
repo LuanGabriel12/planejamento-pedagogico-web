@@ -1,4 +1,4 @@
-import React, { InputHTMLAttributes } from 'react';
+import React, { InputHTMLAttributes, useId } from 'react';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -16,63 +16,75 @@ export const Input: React.FC<InputProps> = ({
   helperText,
   showCharCount = false,
   className = '',
-  maxLength = 500, // Limite padrão de 500 caracteres
+  maxLength = 500,
   value,
+  id,
   ...props
 }) => {
+  const generatedId = useId();
+  const inputId = id || generatedId;
+  const feedbackId = `${inputId}-feedback`;
+
   const borderColor = error
     ? 'border-danger focus:ring-danger'
     : success
-    ? 'border-success focus:ring-success'
-    : 'border-base focus:ring-primary focus:border-primary';
+      ? 'border-success focus:ring-success'
+      : 'border-strong focus:ring-primary focus:border-primary';
 
-  const charCount = String(value || '').length;
+  const charCount = String(value ?? '').length;
 
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium mb-2 text-primary">
+        <label htmlFor={inputId} className="block text-sm font-medium mb-1.5 text-primary">
           {label}
-          {props.required && <span className="text-danger ml-1">*</span>}
+          {props.required && (
+            <span className="text-danger ml-1" aria-hidden="true">
+              *
+            </span>
+          )}
         </label>
       )}
-      
+
       <div className="relative">
         <input
-          className={`w-full px-4 py-3 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-0 transition-all bg-surface text-primary placeholder:text-muted shadow-md ${borderColor} ${className}`}
+          id={inputId}
+          aria-invalid={Boolean(error)}
+          aria-describedby={error || helperText || showCharCount ? feedbackId : undefined}
+          className={`w-full px-3.5 py-2.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-0 transition-colors bg-surface text-primary placeholder:text-muted ${error || success ? 'pr-10' : ''} ${borderColor} ${className}`}
           maxLength={maxLength}
           value={value}
           {...props}
         />
-        
+
         {error && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <AlertCircle className="w-5 h-5 text-danger" />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true">
+            <AlertCircle className="w-4 h-4 text-danger" />
           </div>
         )}
-        
+
         {success && !error && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <CheckCircle2 className="w-5 h-5 text-success" />
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true">
+            <CheckCircle2 className="w-4 h-4 text-success" />
           </div>
         )}
       </div>
-      
+
       {error && (
-        <p className="mt-2 text-sm text-danger flex items-center gap-1">
-          <AlertCircle className="w-4 h-4" />
-          {error}
+        <p id={feedbackId} role="alert" className="mt-1.5 text-xs text-danger flex items-center gap-1">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <span>{error}</span>
         </p>
       )}
-      
+
       {helperText && !error && !showCharCount && (
-        <p className="mt-2 text-sm text-muted">
+        <p id={feedbackId} className="mt-1.5 text-xs text-muted">
           {helperText}
         </p>
       )}
 
       {showCharCount && !error && (
-        <p className="mt-2 text-sm text-muted text-right">
+        <p id={feedbackId} className="mt-1.5 text-xs text-muted text-right">
           {charCount}/{maxLength} caracteres
         </p>
       )}

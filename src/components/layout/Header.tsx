@@ -1,36 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, BookOpen, Sun, Moon, ChevronDown } from 'lucide-react';
+import { Bell, BookOpen, Sun, Moon, ChevronDown, Check, LogOut } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useTheme } from '../../context/ThemeContext';
+import { ANOS_DISPONIVEIS } from '../../data/initialData';
 import { ProfileModal } from '../common/ProfileModal';
 import { DateHelpers } from '../../utils/dateHelpers';
 
 export const Header: React.FC = () => {
-  const { estado, usuarioLogado, mudarAno, marcarNotificacaoLida, marcarTodasLidas, abrirPlanejamento } = useApp();
+  const {
+    estado,
+    usuarioLogado,
+    mudarAno,
+    marcarNotificacaoLida,
+    marcarTodasLidas,
+    abrirPlanejamento,
+    logout
+  } = useApp();
   const { theme, toggleTheme } = useTheme();
   const [notificacoesAbertas, setNotificacoesAbertas] = useState(false);
   const [seletorAnoAberto, setSeletorAnoAberto] = useState(false);
   const [perfilAberto, setPerfilAberto] = useState(false);
-  
+
   const seletorAnoRef = useRef<HTMLDivElement>(null);
   const notificacoesRef = useRef<HTMLDivElement>(null);
 
-  if (!usuarioLogado) return null;
-
-  const { anoAtual } = estado.configuracoes;
-  
-  // Notificações do usuário
-  const notificacoesUsuario = estado.notificacoes
-    .filter(n => n.usuarioId === usuarioLogado.id)
-    .sort((a, b) => {
-      if (a.lida !== b.lida) return a.lida ? 1 : -1;
-      return new Date(b.criadaEm).getTime() - new Date(a.criadaEm).getTime();
-    })
-    .slice(0, 10);
-
-  const naoLidas = notificacoesUsuario.filter(n => !n.lida).length;
-
-  // Fechar dropdowns ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (seletorAnoRef.current && !seletorAnoRef.current.contains(event.target as Node)) {
@@ -41,73 +34,100 @@ export const Header: React.FC = () => {
       }
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSeletorAnoAberto(false);
+        setNotificacoesAbertas(false);
+      }
+    };
+
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
-  // Ícone de notificação baseado no tipo
-  const getIconeNotificacao = (tipo: string) => {
-    switch (tipo) {
-      case 'aprovacao': return '✅';
-      case 'ajuste': return '⚠️';
-      case 'comentario': return '💬';
-      case 'lembrete': return '⏰';
-      default: return 'ℹ️';
-    }
-  };
+  if (!usuarioLogado) return null;
 
-  // Anos disponíveis
-  const anosDisponiveis = [2024, 2025, 2026, 2027];
+  const { anoAtual } = estado.configuracoes;
+
+  const notificacoesUsuario = estado.notificacoes
+    .filter(n => n.usuarioId === usuarioLogado.id)
+    .sort((a, b) => {
+      if (a.lida !== b.lida) return a.lida ? 1 : -1;
+      return new Date(b.criadaEm).getTime() - new Date(a.criadaEm).getTime();
+    })
+    .slice(0, 15);
+
+  const naoLidas = notificacoesUsuario.filter(n => !n.lida).length;
 
   return (
-    <header className="shadow-md sticky top-0 z-40 bg-surface border-b-2 border-base transition-colors">
-      <div className="max-w-7xl mx-auto px-3 md:px-6 py-3 md:py-4">
+    <header className="sticky top-0 z-40 bg-surface border-b border-base shadow-sm">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3">
         <div className="flex items-center justify-between gap-2">
-          {/* Logo e Título */}
-          <div className="flex items-center gap-2 md:gap-3 min-w-0">
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-primary rounded-lg flex items-center justify-center">
-              <BookOpen className="w-5 h-5 md:w-6 md:h-6 text-white" />
+          {/* Identidade */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center shrink-0">
+              <BookOpen className="w-5 h-5 text-on-primary" aria-hidden="true" />
             </div>
-            <div>
-              <h1 className="text-base md:text-xl font-bold text-primary">
+            <div className="min-w-0">
+              <p className="text-sm sm:text-base font-bold text-primary truncate">
                 Planejamento Pedagógico
-              </h1>
-              <p className="text-xs text-muted hidden sm:block">
-                {usuarioLogado.role === 'professor' ? 'Professor' : 'Diretor'} • {usuarioLogado.nome}
+              </p>
+              <p className="text-xs text-muted truncate">
+                {usuarioLogado.role === 'professor' ? 'Professor' : 'Direção'} · {usuarioLogado.nome}
               </p>
             </div>
           </div>
 
           {/* Controles */}
-          <div className="flex items-center gap-1 md:gap-4 shrink-0">
+          <nav aria-label="Controles principais" className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* Seletor de Ano */}
             <div className="relative" ref={seletorAnoRef}>
               <button
-                onClick={() => setSeletorAnoAberto(!seletorAnoAberto)}
-                className="flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 text-sm md:text-base rounded-lg transition-all bg-elevated border border-base text-primary hover:bg-hover hover:border-strong shadow-sm"
+                type="button"
+                onClick={() => {
+                  setSeletorAnoAberto(prev => !prev);
+                  setNotificacoesAbertas(false);
+                }}
+                aria-expanded={seletorAnoAberto}
+                aria-haspopup="listbox"
+                aria-label={`Ano letivo selecionado: ${anoAtual}. Alterar ano`}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-2 text-sm font-semibold rounded-lg bg-elevated border border-base text-primary hover:bg-hover transition-colors"
               >
-                <span className="font-semibold whitespace-nowrap">{anoAtual}</span>
-                <ChevronDown className={`w-3 h-3 md:w-4 md:h-4 transition-transform ${seletorAnoAberto ? 'rotate-180' : ''}`} />
+                <span>{anoAtual}</span>
+                <ChevronDown
+                  className={`w-4 h-4 text-muted transition-transform ${seletorAnoAberto ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                />
               </button>
 
-              {/* Dropdown do Ano */}
               {seletorAnoAberto && (
-                <div className="absolute right-0 mt-2 w-32 rounded-lg shadow-xl border-2 z-50 animate-scale-in bg-surface border-base overflow-hidden">
-                  {anosDisponiveis.map(ano => (
+                <div
+                  role="listbox"
+                  aria-label="Selecionar ano letivo"
+                  className="absolute right-0 mt-2 w-32 rounded-xl shadow-lg border border-base z-50 bg-surface overflow-hidden py-1"
+                >
+                  {ANOS_DISPONIVEIS.map(ano => (
                     <button
                       key={ano}
+                      type="button"
+                      role="option"
+                      aria-selected={ano === anoAtual}
                       onClick={() => {
                         mudarAno(ano);
                         setSeletorAnoAberto(false);
                       }}
-                      className={`w-full px-4 py-3 text-left transition-all ${
+                      className={`w-full px-3.5 py-2 text-sm text-left flex items-center justify-between transition-colors ${
                         ano === anoAtual
-                          ? 'bg-primary text-white font-semibold'
+                          ? 'bg-primary text-on-primary font-semibold'
                           : 'text-primary hover:bg-hover'
                       }`}
                     >
-                      {ano}
-                      {ano === anoAtual && <span className="ml-2">✓</span>}
+                      <span>{ano}</span>
+                      {ano === anoAtual && <Check className="w-4 h-4" aria-hidden="true" />}
                     </button>
                   ))}
                 </div>
@@ -116,54 +136,68 @@ export const Header: React.FC = () => {
 
             {/* Tema */}
             <button
+              type="button"
               onClick={toggleTheme}
-              className="p-2 rounded-lg transition-all hover:bg-hover text-muted hover:text-primary active:scale-95"
-              title={theme === 'dark' ? 'Mudar para Claro' : 'Mudar para Escuro'}
+              aria-label={theme === 'dark' ? 'Alternar para tema claro' : 'Alternar para tema escuro'}
+              title={theme === 'dark' ? 'Alternar para tema claro' : 'Alternar para tema escuro'}
+              className="p-2 rounded-lg text-secondary hover:text-primary hover:bg-hover transition-colors"
             >
-              {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              {theme === 'dark' ? (
+                <Sun className="w-5 h-5" aria-hidden="true" />
+              ) : (
+                <Moon className="w-5 h-5" aria-hidden="true" />
+              )}
             </button>
 
             {/* Notificações */}
             <div className="relative" ref={notificacoesRef}>
               <button
-                onClick={() => setNotificacoesAbertas(!notificacoesAbertas)}
-                className="relative p-1.5 md:p-2 rounded-lg transition-colors hover:bg-hover"
+                type="button"
+                onClick={() => {
+                  setNotificacoesAbertas(prev => !prev);
+                  setSeletorAnoAberto(false);
+                }}
+                aria-expanded={notificacoesAbertas}
+                aria-label={`Notificações${naoLidas > 0 ? ` (${naoLidas} não lidas)` : ''}`}
+                className="relative p-2 rounded-lg text-secondary hover:text-primary hover:bg-hover transition-colors"
               >
-                <Bell className="w-5 h-5 md:w-6 md:h-6 text-secondary" />
+                <Bell className="w-5 h-5" aria-hidden="true" />
                 {naoLidas > 0 && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-danger text-white text-xs font-bold rounded-full flex items-center justify-center animate-pulse-soft">
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 bg-danger text-on-danger text-[11px] font-bold rounded-full flex items-center justify-center">
                     {naoLidas > 9 ? '9+' : naoLidas}
                   </span>
                 )}
               </button>
 
-              {/* Dropdown de Notificações */}
               {notificacoesAbertas && (
-                <div className="absolute right-0 top-full mt-2 w-80 md:w-96 rounded-xl shadow-xl border-2 z-50 animate-scale-in bg-surface border-base overflow-hidden">
-                  <div className="p-3 md:p-4 border-b-2 border-base flex items-center justify-between bg-surface">
-                    <h3 className="text-sm md:text-base font-bold text-primary">
-                      Notificações
-                    </h3>
+                <div
+                  role="region"
+                  aria-label="Lista de notificações locais"
+                  className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-16 sm:top-full sm:mt-2 sm:w-96 rounded-xl shadow-xl border border-base z-50 bg-surface overflow-hidden"
+                >
+                  <div className="px-4 py-3 border-b border-base flex items-center justify-between">
+                    <h2 className="text-sm font-bold text-primary">Notificações locais</h2>
                     {naoLidas > 0 && (
                       <button
+                        type="button"
                         onClick={marcarTodasLidas}
-                        className="text-xs md:text-sm text-primary hover:underline whitespace-nowrap"
+                        className="text-xs font-medium text-primary hover:underline"
                       >
-                        Marcar lidas
+                        Marcar todas como lidas
                       </button>
                     )}
                   </div>
 
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="max-h-80 overflow-y-auto divide-y divide-base">
                     {notificacoesUsuario.length === 0 ? (
-                      <div className="p-8 text-center text-muted">
-                        <Bell className="w-12 h-12 mx-auto mb-2 text-muted" />
-                        <p>Nenhuma notificação</p>
+                      <div className="p-6 text-center text-sm text-muted">
+                        Nenhuma notificação registrada para este perfil.
                       </div>
                     ) : (
                       notificacoesUsuario.map(notif => (
-                        <div
+                        <button
                           key={notif.id}
+                          type="button"
                           onClick={() => {
                             if (!notif.lida) marcarNotificacaoLida(notif.id);
                             if (notif.planejamentoId) {
@@ -171,30 +205,28 @@ export const Header: React.FC = () => {
                               setNotificacoesAbertas(false);
                             }
                           }}
-                          className={`p-3 md:p-4 border-b border-base transition-colors cursor-pointer ${
-                            !notif.lida 
-                              ? 'bg-primary/5' 
-                              : 'hover:bg-hover'
+                          className={`w-full text-left p-3.5 transition-colors flex items-start gap-3 ${
+                            !notif.lida ? 'bg-primary/5 hover:bg-primary/10' : 'hover:bg-hover'
                           }`}
                         >
-                          <div className="flex items-start gap-2 md:gap-3">
-                            <span className="text-xl md:text-2xl">{getIconeNotificacao(notif.tipo)}</span>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-xs md:text-sm text-primary break-words">
-                                {notif.titulo}
-                              </p>
-                              <p className="text-xs md:text-sm mt-1 text-secondary break-words">
-                                {notif.mensagem}
-                              </p>
-                              <p className="text-xs mt-2 text-muted">
-                                {DateHelpers.tempoDesde(notif.criadaEm)}
-                              </p>
-                            </div>
-                            {!notif.lida && (
-                              <div className="flex-shrink-0 w-2 h-2 bg-primary rounded-full" />
-                            )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-xs sm:text-sm text-primary">
+                              {notif.titulo}
+                            </p>
+                            <p className="text-xs text-secondary mt-0.5 break-words">
+                              {notif.mensagem}
+                            </p>
+                            <p className="text-[11px] text-muted mt-1">
+                              {DateHelpers.tempoDesde(notif.criadaEm)}
+                            </p>
                           </div>
-                        </div>
+                          {!notif.lida && (
+                            <span
+                              className="w-2 h-2 bg-primary rounded-full mt-1.5 shrink-0"
+                              aria-label="Não lida"
+                            />
+                          )}
+                        </button>
                       ))
                     )}
                   </div>
@@ -202,24 +234,35 @@ export const Header: React.FC = () => {
               )}
             </div>
 
-            {/* Avatar e Perfil */}
+            {/* Perfil */}
             <button
+              type="button"
               onClick={() => setPerfilAberto(true)}
-              className="flex items-center gap-3 p-2 rounded-lg transition-all hover:bg-hover active:scale-95"
-              title="Ver Perfil"
+              aria-label={`Abrir perfil de ${usuarioLogado.nome}`}
+              className="flex items-center gap-2 p-1.5 sm:pr-2.5 rounded-lg hover:bg-hover transition-colors"
             >
-              <div className="w-10 h-10 bg-gradient-to-br from-primary to-info text-white rounded-full flex items-center justify-center font-bold shadow-sm">
+              <div className="w-8 h-8 bg-primary text-on-primary rounded-full flex items-center justify-center text-xs font-bold">
                 {usuarioLogado.avatar}
               </div>
-              <span className="hidden md:block font-medium text-primary">
-                {usuarioLogado.nome.split(' ')[0]}
+              <span className="hidden md:block text-sm font-medium text-primary max-w-[140px] truncate">
+                {usuarioLogado.nome}
               </span>
             </button>
-          </div>
+
+            {/* Atalho rápido para trocar perfil */}
+            <button
+              type="button"
+              onClick={() => logout()}
+              aria-label="Trocar de perfil simulado"
+              title="Trocar de perfil"
+              className="p-2 rounded-lg text-secondary hover:text-danger hover:bg-danger/10 transition-colors"
+            >
+              <LogOut className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </nav>
         </div>
       </div>
 
-      {/* Modal de Perfil */}
       <ProfileModal isOpen={perfilAberto} onClose={() => setPerfilAberto(false)} />
     </header>
   );
