@@ -1,79 +1,128 @@
 // ============================================
-// HELPERS DE DATA - FOCO EM QUINZENAS
+// HELPERS DE DATA - QUINZENAS E FORMATAÇÃO SEGURA
 // ============================================
 
-export const DateHelpers = {
-  // Nomes dos meses
-  getNomeMes(mes: number): string {
-    const meses = [
-      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-    ];
-    return meses[mes - 1] || '';
-  },
+const NOMES_MESES = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro'
+] as const;
 
-  // Calcular período de uma quinzena
-  calcularPeriodo(ano: number, mes: number, quinzena: 1 | 2): { inicio: string; fim: string; periodoInicio: string; periodoFim: string } {
-    if (quinzena === 1) {
-      return {
-        inicio: `${ano}-${String(mes).padStart(2, '0')}-01`,
-        fim: `${ano}-${String(mes).padStart(2, '0')}-15`,
-        periodoInicio: `${ano}-${String(mes).padStart(2, '0')}-01`,
-        periodoFim: `${ano}-${String(mes).padStart(2, '0')}-15`
-      };
-    } else {
-      const ultimoDia = new Date(ano, mes, 0).getDate();
-      return {
-        inicio: `${ano}-${String(mes).padStart(2, '0')}-16`,
-        fim: `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`,
-        periodoInicio: `${ano}-${String(mes).padStart(2, '0')}-16`,
-        periodoFim: `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
-      };
+const REGEX_DATA_CURTA = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function parseDataSegura(data?: string | null): Date | null {
+  if (!data || typeof data !== 'string') return null;
+
+  const trimmed = data.trim();
+  if (!trimmed) return null;
+
+  const matchCurta = REGEX_DATA_CURTA.exec(trimmed);
+  if (matchCurta) {
+    const ano = Number(matchCurta[1]);
+    const mes = Number(matchCurta[2]);
+    const dia = Number(matchCurta[3]);
+    const d = new Date(ano, mes - 1, dia);
+    if (
+      d.getFullYear() !== ano ||
+      d.getMonth() !== mes - 1 ||
+      d.getDate() !== dia
+    ) {
+      return null;
     }
+    return d;
+  }
+
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+}
+
+export const DateHelpers = {
+  getNomeMes(mes: number): string {
+    if (!Number.isInteger(mes) || mes < 1 || mes > 12) return '';
+    return NOMES_MESES[mes - 1];
   },
 
-  // Formatar período (ex: "01/01 a 15/01")
+  isDataValida(data?: string | null): boolean {
+    return parseDataSegura(data) !== null;
+  },
+
+  calcularPeriodo(
+    ano: number,
+    mes: number,
+    quinzena: 1 | 2
+  ): { inicio: string; fim: string; periodoInicio: string; periodoFim: string } {
+    const mesPad = String(mes).padStart(2, '0');
+    if (quinzena === 1) {
+      const inicio = `${ano}-${mesPad}-01`;
+      const fim = `${ano}-${mesPad}-15`;
+      return { inicio, fim, periodoInicio: inicio, periodoFim: fim };
+    }
+
+    const ultimoDia = new Date(ano, mes, 0).getDate();
+    const inicio = `${ano}-${mesPad}-16`;
+    const fim = `${ano}-${mesPad}-${String(ultimoDia).padStart(2, '0')}`;
+    return { inicio, fim, periodoInicio: inicio, periodoFim: fim };
+  },
+
+  isPeriodoQuinzenaValido(
+    ano: number,
+    mes: number,
+    quinzena: number,
+    periodoInicio: string,
+    periodoFim: string
+  ): boolean {
+    if (!Number.isInteger(ano) || !Number.isInteger(mes) || mes < 1 || mes > 12) {
+      return false;
+    }
+    if (quinzena !== 1 && quinzena !== 2) {
+      return false;
+    }
+    if (!this.isDataValida(periodoInicio) || !this.isDataValida(periodoFim)) {
+      return false;
+    }
+    const esperado = this.calcularPeriodo(ano, mes, quinzena);
+    return periodoInicio === esperado.periodoInicio && periodoFim === esperado.periodoFim;
+  },
+
   formatarPeriodo(inicio: string, fim: string): string {
-    // Corrigir parsing de data para evitar problemas de timezone
-    const parseDate = (dateStr: string) => {
-      const [ano, mes, dia] = dateStr.split('-').map(Number);
-      return new Date(ano, mes - 1, dia);
-    };
-    
-    const d1 = parseDate(inicio);
-    const d2 = parseDate(fim);
-    
+    const d1 = parseDataSegura(inicio);
+    const d2 = parseDataSegura(fim);
+    if (!d1 || !d2) return 'Período inválido';
+
     return `${String(d1.getDate()).padStart(2, '0')}/${String(d1.getMonth() + 1).padStart(2, '0')} a ${String(d2.getDate()).padStart(2, '0')}/${String(d2.getMonth() + 1).padStart(2, '0')}`;
   },
 
-  // Formatar data completa
-  formatarData(data: string): string {
-    // Corrigir parsing de data para evitar problemas de timezone
-    const parseDate = (dateStr: string) => {
-      if (dateStr.includes('T')) {
-        // ISO string com hora
-        return new Date(dateStr);
-      }
-      // Data no formato YYYY-MM-DD
-      const [ano, mes, dia] = dateStr.split('-').map(Number);
-      return new Date(ano, mes - 1, dia);
-    };
-    
-    const d = parseDate(data);
+  formatarData(data?: string | null): string {
+    const d = parseDataSegura(data);
+    if (!d) return 'Data indisponível';
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   },
 
-  // Formatar data e hora
-  formatarDataHora(data: string): string {
-    const d = new Date(data);
+  formatarDataHora(data?: string | null): string {
+    const d = parseDataSegura(data);
+    if (!d) return 'Data indisponível';
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()} às ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   },
 
-  // Tempo desde uma data (ex: "Há 3 dias")
-  tempoDesde(data: string): string {
-    const agora = new Date();
-    const passado = new Date(data);
+  tempoDesde(data?: string | null, agoraRef?: Date): string {
+    const passado = parseDataSegura(data);
+    if (!passado) return 'Data indisponível';
+
+    const agora = agoraRef ?? new Date();
     const diff = agora.getTime() - passado.getTime();
+    if (diff < 0) return 'Agora mesmo';
 
     const minutos = Math.floor(diff / 60000);
     const horas = Math.floor(minutos / 60);
@@ -85,24 +134,33 @@ export const DateHelpers = {
     return 'Agora mesmo';
   },
 
-  // Dias restantes até uma data
-  diasRestantes(dataFutura: string): number {
-    const agora = new Date();
-    const futuro = new Date(dataFutura);
+  diasDesde(data?: string | null, agoraRef?: Date): number | null {
+    const passado = parseDataSegura(data);
+    if (!passado) return null;
+
+    const agora = agoraRef ?? new Date();
+    const diff = agora.getTime() - passado.getTime();
+    return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+  },
+
+  diasRestantes(dataFutura?: string | null, agoraRef?: Date): number | null {
+    const futuro = parseDataSegura(dataFutura);
+    if (!futuro) return null;
+
+    const agora = agoraRef ?? new Date();
     const diff = futuro.getTime() - agora.getTime();
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   },
 
-  // Adicionar dias a uma data
   adicionarDias(data: string, dias: number): string {
-    const d = new Date(data);
-    d.setDate(d.getDate() + dias);
-    return d.toISOString();
+    const d = parseDataSegura(data) ?? new Date();
+    const copia = new Date(d.getTime());
+    copia.setDate(copia.getDate() + dias);
+    return copia.toISOString();
   },
 
-  // Quinzena atual
-  getQuinzenaAtual(): { mes: number; quinzena: 1 | 2; ano: number } {
-    const hoje = new Date();
+  getQuinzenaAtual(agoraRef?: Date): { mes: number; quinzena: 1 | 2; ano: number } {
+    const hoje = agoraRef ?? new Date();
     const dia = hoje.getDate();
     return {
       ano: hoje.getFullYear(),

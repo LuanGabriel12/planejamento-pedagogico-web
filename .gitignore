@@ -35,5 +35,6 @@ Thumbs.db
 
 # Cópia de verificação local
 .verificacao/
+pedagogical-planning-web-v2-review.zip
 .env.*
 !.env.example

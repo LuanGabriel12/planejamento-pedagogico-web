@@ -1,14 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Send, Plus, Trash2, AlertCircle } from 'lucide-react';
+import React, { useState, useRef, useId } from 'react';
+import { Save, Send, Plus, Trash2, AlertCircle, X, AlertTriangle } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useApp } from '../../context/AppContext';
-import { Planejamento, Objetivo } from '../../types';
+import {
+  CampoValidacao,
+  MapaErrosValidacao,
+  Objetivo,
+  PlanejamentoFormularioInput
+} from '../../types';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Textarea } from '../common/Textarea';
+import { Modal } from '../common/Modal';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { DateHelpers } from '../../utils/dateHelpers';
-import { ValidationHelpers } from '../../utils/validationHelpers';
-import { disciplinasDisponiveis, turmasDisponiveis, instrumentosAvaliacaoDisponiveis } from '../../data/initialData';
-import toast from 'react-hot-toast';
+import { LIMITES_PLANEJAMENTO, validarCampoEnvio } from '../../domain/validation';
+import {
+  disciplinasDisponiveis,
+  turmasDisponiveis,
+  instrumentosAvaliacaoDisponiveis,
+  recursosDisponiveis
+} from '../../data/initialData';
 
 interface FormularioPlanejamentoProps {
   mes: number;
@@ -23,738 +35,692 @@ export const FormularioPlanejamento: React.FC<FormularioPlanejamentoProps> = ({
   planejamentoId,
   onClose
 }) => {
-  const { estado, usuarioLogado, adicionarPlanejamento, atualizarPlanejamento } = useApp();
+  const {
+    estado,
+    salvarRascunhoPlanejamento,
+    enviarPlanejamentoParaRevisao
+  } = useApp();
   const { anoAtual } = estado.configuracoes;
-  const idSalvo = useRef<string | undefined>(planejamentoId);
 
-  // Carregar planejamento existente se for edição
-  const planejamentoExistente = planejamentoId
-    ? estado.planejamentos.find(p => p.id === planejamentoId)
+  const idSalvoRef = useRef<string | undefined>(planejamentoId);
+  const objetivoInputId = useId();
+  const recursoInputId = useId();
+  const referenciaInputId = useId();
+
+  const planejamentoAtual = idSalvoRef.current
+    ? estado.planejamentos.find(p => p.id === idSalvoRef.current)
     : undefined;
 
-  const { periodoInicio: inicio, periodoFim: fim } = DateHelpers.calcularPeriodo(anoAtual, mes, quinzena);
+  const anoPlanejamento = planejamentoAtual?.ano ?? anoAtual;
+  const mesPlanejamento = planejamentoAtual?.mes ?? mes;
+  const quinzenaPlanejamento = planejamentoAtual?.quinzena ?? quinzena;
+  const { periodoInicio, periodoFim } = DateHelpers.calcularPeriodo(
+    anoPlanejamento,
+    mesPlanejamento,
+    quinzenaPlanejamento
+  );
 
-  // Estado do formulário
-  const [form, setForm] = useState({
-    titulo: planejamentoExistente?.titulo || '',
-    disciplinas: planejamentoExistente?.disciplinas || [],
-    turmas: planejamentoExistente?.turmas || [],
-    experienciaAprendizagem: planejamentoExistente?.experienciaAprendizagem || '',
-    objetivos: planejamentoExistente?.objetivos || [],
-    recursosNecessarios: planejamentoExistente?.recursosNecessarios || [],
-    metodologiaAvaliacao: planejamentoExistente?.metodologiaAvaliacao || '',
-    instrumentosAvaliacao: planejamentoExistente?.instrumentosAvaliacao || [],
-    conclusao: planejamentoExistente?.conclusao || '',
-    referencias: planejamentoExistente?.referencias || [],
-    observacoes: planejamentoExistente?.observacoes || ''
+  const [form, setForm] = useState<PlanejamentoFormularioInput>({
+    titulo: planejamentoAtual?.titulo || '',
+    disciplinas: planejamentoAtual?.disciplinas ? [...planejamentoAtual.disciplinas] : [],
+    turmas: planejamentoAtual?.turmas ? [...planejamentoAtual.turmas] : [],
+    experienciaAprendizagem: planejamentoAtual?.experienciaAprendizagem || '',
+    objetivos: planejamentoAtual?.objetivos ? planejamentoAtual.objetivos.map(o => ({ ...o })) : [],
+    recursosNecessarios: planejamentoAtual?.recursosNecessarios
+      ? [...planejamentoAtual.recursosNecessarios]
+      : [],
+    metodologiaAvaliacao: planejamentoAtual?.metodologiaAvaliacao || '',
+    instrumentosAvaliacao: planejamentoAtual?.instrumentosAvaliacao
+      ? [...planejamentoAtual.instrumentosAvaliacao]
+      : [],
+    conclusao: planejamentoAtual?.conclusao || '',
+    referencias: planejamentoAtual?.referencias ? [...planejamentoAtual.referencias] : [],
+    observacoes: planejamentoAtual?.observacoes || ''
   });
 
-  const [erros, setErros] = useState<Record<string, string>>({});
-  const [salvando, setSalvando] = useState(false);
-  const [enviando, setEnviando] = useState(false);
-  const [tocado, setTocado] = useState<Record<string, boolean>>({});
+  const [erros, setErros] = useState<MapaErrosValidacao>({});
+  const [tocado, setTocado] = useState<Partial<Record<CampoValidacao, boolean>>>({});
+  const [alteracoesNaoSalvas, setAlteracoesNaoSalvas] = useState(false);
+  const [ultimoSalvoHora, setUltimoSalvoHora] = useState<string | null>(null);
+  const [confirmandoFechamento, setConfirmandoFechamento] = useState(false);
 
-  // Novo objetivo
   const [novoObjetivo, setNovoObjetivo] = useState('');
   const [novaReferencia, setNovaReferencia] = useState('');
   const [novoRecurso, setNovoRecurso] = useState('');
 
-  // Validar campo específico
-  const validarCampo = (campo: string, valor: any) => {
-    const novosErros = { ...erros };
-    
-    switch (campo) {
-      case 'titulo':
-        if (!valor || valor.trim().length < 10) {
-          novosErros.titulo = 'Título deve ter no mínimo 10 caracteres';
-        } else if (valor.length > 100) {
-          novosErros.titulo = 'Título deve ter no máximo 100 caracteres';
-        } else {
-          delete novosErros.titulo;
-        }
-        break;
-      
-      case 'disciplinas':
-        if (!valor || valor.length === 0) {
-          novosErros.disciplinas = 'Selecione pelo menos uma disciplina';
-        } else {
-          delete novosErros.disciplinas;
-        }
-        break;
-      
-      case 'turmas':
-        if (!valor || valor.length === 0) {
-          novosErros.turmas = 'Selecione pelo menos uma turma';
-        } else {
-          delete novosErros.turmas;
-        }
-        break;
-      
-      case 'experienciaAprendizagem':
-        if (!valor || valor.trim().length < 100) {
-          novosErros.experienciaAprendizagem = 'Deve ter no mínimo 100 caracteres';
-        } else {
-          delete novosErros.experienciaAprendizagem;
-        }
-        break;
-      
-      case 'objetivos':
-        if (!valor || valor.length < 2) {
-          novosErros.objetivos = 'Adicione no mínimo 2 objetivos';
-        } else {
-          delete novosErros.objetivos;
-        }
-        break;
-      
-      case 'metodologiaAvaliacao':
-        if (!valor || valor.trim().length < 50) {
-          novosErros.metodologiaAvaliacao = 'Deve ter no mínimo 50 caracteres';
-        } else {
-          delete novosErros.metodologiaAvaliacao;
-        }
-        break;
-      
-      case 'conclusao':
-        if (!valor || valor.trim().length < 50) {
-          novosErros.conclusao = 'Deve ter no mínimo 50 caracteres';
-        } else {
-          delete novosErros.conclusao;
-        }
-        break;
-      
-      case 'referencias':
-        if (!valor || valor.length < 1) {
-          novosErros.referencias = 'Adicione pelo menos uma referência';
-        } else {
-          delete novosErros.referencias;
-        }
-        break;
-    }
-    
-    setErros(novosErros);
+  const atualizarErroCampo = (campo: CampoValidacao, valor: unknown) => {
+    const mensagem = validarCampoEnvio(campo, valor);
+    setErros(prev => {
+      const proximo = { ...prev };
+      if (mensagem) {
+        proximo[campo] = mensagem;
+      } else {
+        delete proximo[campo];
+      }
+      delete proximo.geral;
+      return proximo;
+    });
   };
 
-  // Salvar automaticamente a cada 30s
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (!planejamentoId && Object.values(form).some(v => v && (Array.isArray(v) ? v.length > 0 : v.length > 0))) {
-        handleSalvarRascunho(true);
-      }
-    }, 30000);
+  const atualizarCampo = <K extends keyof PlanejamentoFormularioInput>(
+    campo: K,
+    valor: PlanejamentoFormularioInput[K]
+  ) => {
+    setForm(prev => ({ ...prev, [campo]: valor }));
+    setAlteracoesNaoSalvas(true);
+    if (tocado[campo as CampoValidacao]) {
+      atualizarErroCampo(campo as CampoValidacao, valor);
+    }
+  };
 
-    return () => clearInterval(interval);
-  }, [form]);
+  const marcarTocado = (campo: CampoValidacao, valor: unknown) => {
+    setTocado(prev => ({ ...prev, [campo]: true }));
+    atualizarErroCampo(campo, valor);
+  };
 
-  // Adicionar objetivo
   const adicionarObjetivo = () => {
-    if (!novoObjetivo.trim()) return;
+    const texto = novoObjetivo.trim();
+    if (!texto) return;
 
     const objetivo: Objetivo = {
-      id: `obj_${Date.now()}`,
-      texto: novoObjetivo,
+      id: `obj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      texto,
       atingido: false
     };
-
-    const novosObjetivos = [...form.objetivos, objetivo];
-    setForm(prev => ({
-      ...prev,
-      objetivos: novosObjetivos
-    }));
+    const novos = [...form.objetivos, objetivo];
+    setForm(prev => ({ ...prev, objetivos: novos }));
     setNovoObjetivo('');
-    setTocado(prev => ({ ...prev, objetivos: true }));
-    validarCampo('objetivos', novosObjetivos);
+    setAlteracoesNaoSalvas(true);
+    marcarTocado('objetivos', novos);
   };
 
-  // Remover objetivo
   const removerObjetivo = (id: string) => {
-    const novosObjetivos = form.objetivos.filter(o => o.id !== id);
-    setForm(prev => ({
-      ...prev,
-      objetivos: novosObjetivos
-    }));
-    setTocado(prev => ({ ...prev, objetivos: true }));
-    validarCampo('objetivos', novosObjetivos);
+    const novos = form.objetivos.filter(o => o.id !== id);
+    setForm(prev => ({ ...prev, objetivos: novos }));
+    setAlteracoesNaoSalvas(true);
+    marcarTocado('objetivos', novos);
   };
 
-  // Adicionar referência
   const adicionarReferencia = () => {
-    if (!novaReferencia.trim()) return;
+    const texto = novaReferencia.trim();
+    if (!texto) return;
 
-    const novasReferencias = [...form.referencias, novaReferencia];
-    setForm(prev => ({
-      ...prev,
-      referencias: novasReferencias
-    }));
+    const novas = [...form.referencias, texto];
+    setForm(prev => ({ ...prev, referencias: novas }));
     setNovaReferencia('');
-    setTocado(prev => ({ ...prev, referencias: true }));
-    validarCampo('referencias', novasReferencias);
+    setAlteracoesNaoSalvas(true);
+    marcarTocado('referencias', novas);
   };
 
-  // Remover referência
   const removerReferencia = (index: number) => {
-    const novasReferencias = form.referencias.filter((_, i) => i !== index);
-    setForm(prev => ({
-      ...prev,
-      referencias: novasReferencias
-    }));
-    setTocado(prev => ({ ...prev, referencias: true }));
-    validarCampo('referencias', novasReferencias);
+    const novas = form.referencias.filter((_, i) => i !== index);
+    setForm(prev => ({ ...prev, referencias: novas }));
+    setAlteracoesNaoSalvas(true);
+    marcarTocado('referencias', novas);
   };
 
-  // Adicionar recurso
-  const adicionarRecurso = () => {
-    if (!novoRecurso.trim()) return;
-    
-    // Verificar se já existe
-    if (form.recursosNecessarios.includes(novoRecurso)) {
-      toast.error('Este recurso já foi adicionado!');
+  const adicionarRecurso = (recursoTexto?: string) => {
+    const texto = (recursoTexto ?? novoRecurso).trim();
+    if (!texto) return;
+
+    const jaExiste = form.recursosNecessarios.some(
+      r => r.toLowerCase() === texto.toLowerCase()
+    );
+    if (jaExiste) {
+      toast.error('Este recurso já foi adicionado.');
       return;
     }
 
-    setForm(prev => ({
-      ...prev,
-      recursosNecessarios: [...prev.recursosNecessarios, novoRecurso]
-    }));
-    setNovoRecurso('');
+    const novos = [...form.recursosNecessarios, texto];
+    setForm(prev => ({ ...prev, recursosNecessarios: novos }));
+    if (!recursoTexto) setNovoRecurso('');
+    setAlteracoesNaoSalvas(true);
   };
 
-  // Remover recurso
   const removerRecurso = (recurso: string) => {
     setForm(prev => ({
       ...prev,
       recursosNecessarios: prev.recursosNecessarios.filter(r => r !== recurso)
     }));
+    setAlteracoesNaoSalvas(true);
   };
 
-  // Toggle disciplina
-  const toggleDisciplina = (disc: string) => {
-    const novasDisciplinas = form.disciplinas.includes(disc)
-      ? form.disciplinas.filter(d => d !== disc)
-      : [...form.disciplinas, disc];
-    
-    setForm(prev => ({
-      ...prev,
-      disciplinas: novasDisciplinas
-    }));
-    setTocado(prev => ({ ...prev, disciplinas: true }));
-    validarCampo('disciplinas', novasDisciplinas);
-  };
+  const toggleItemLista = (campo: 'disciplinas' | 'turmas' | 'instrumentosAvaliacao', valor: string) => {
+    const atual = form[campo];
+    const proximo = atual.includes(valor)
+      ? atual.filter(item => item !== valor)
+      : [...atual, valor];
 
-  // Toggle turma
-  const toggleTurma = (turma: string) => {
-    const novasTurmas = form.turmas.includes(turma)
-      ? form.turmas.filter(t => t !== turma)
-      : [...form.turmas, turma];
-    
-    setForm(prev => ({
-      ...prev,
-      turmas: novasTurmas
-    }));
-    setTocado(prev => ({ ...prev, turmas: true }));
-    validarCampo('turmas', novasTurmas);
-  };
-
-  // Toggle instrumento de avaliação
-  const toggleInstrumento = (inst: string) => {
-    setForm(prev => ({
-      ...prev,
-      instrumentosAvaliacao: prev.instrumentosAvaliacao.includes(inst)
-        ? prev.instrumentosAvaliacao.filter(i => i !== inst)
-        : [...prev.instrumentosAvaliacao, inst]
-    }));
-  };
-
-  // Salvar como rascunho
-  const handleSalvarRascunho = async (auto = false) => {
-    if (!usuarioLogado) return;
-
-    setSalvando(true);
-
-    try {
-      const planejamento: Omit<Planejamento, 'id'> = {
-        professorId: usuarioLogado.id,
-        ano: anoAtual,
-        mes,
-        quinzena,
-        periodoInicio: inicio,
-        periodoFim: fim,
-        ...form,
-        status: 'rascunho',
-        criadoEm: planejamentoExistente?.criadoEm || new Date().toISOString(),
-        atualizadoEm: new Date().toISOString(),
-        historicoConsideracoes: planejamentoExistente?.historicoConsideracoes || [],
-        versao: (planejamentoExistente?.versao || 0) + 1
-      };
-
-      if (idSalvo.current) {
-        atualizarPlanejamento(idSalvo.current, planejamento);
-      } else {
-        idSalvo.current = adicionarPlanejamento(planejamento);
-      }
-
-      if (!auto) {
-        toast.success('Rascunho salvo com sucesso! ✓');
-      }
-    } catch (error) {
-      toast.error('Erro ao salvar rascunho');
-    } finally {
-      setSalvando(false);
+    setForm(prev => ({ ...prev, [campo]: proximo }));
+    setAlteracoesNaoSalvas(true);
+    if (campo === 'disciplinas' || campo === 'turmas') {
+      marcarTocado(campo, proximo);
     }
   };
 
-  // Enviar para revisão
-  const handleEnviar = async () => {
-    if (!usuarioLogado) return;
+  const handleSalvarRascunho = () => {
+    const resultado = salvarRascunhoPlanejamento({
+      planejamentoId: idSalvoRef.current,
+      ano: anoPlanejamento,
+      mes: mesPlanejamento,
+      quinzena: quinzenaPlanejamento,
+      dados: form
+    });
 
-    // Validar
-    const resultado = ValidationHelpers.validarPlanejamento(form);
-    
-    if (!resultado.valido) {
-      toast.error('Preencha todos os campos obrigatórios!');
-      // Mostrar erros
-      const novosErros: Record<string, string> = {};
-      resultado.erros.forEach((erro, index) => {
-        novosErros[`erro_${index}`] = erro;
-      });
-      setErros(novosErros);
+    if (!resultado.ok) {
+      if (resultado.errosPorCampo) {
+        setErros(resultado.errosPorCampo);
+      }
       return;
     }
 
-    setEnviando(true);
-
-    try {
-      const planejamento: Omit<Planejamento, 'id'> = {
-        professorId: usuarioLogado.id,
-        ano: anoAtual,
-        mes,
-        quinzena,
-        periodoInicio: inicio,
-        periodoFim: fim,
-        ...form,
-        status: 'aguardando_revisao',
-        criadoEm: planejamentoExistente?.criadoEm || new Date().toISOString(),
-        atualizadoEm: new Date().toISOString(),
-        enviadoEm: new Date().toISOString(),
-        historicoConsideracoes: planejamentoExistente?.historicoConsideracoes || [],
-        versao: (planejamentoExistente?.versao || 0) + 1
-      };
-
-      if (idSalvo.current) {
-        atualizarPlanejamento(idSalvo.current, planejamento);
-      } else {
-        idSalvo.current = adicionarPlanejamento(planejamento);
-      }
-
-      toast.success('Planejamento enviado para revisão! 🎉');
-      onClose();
-    } catch (error) {
-      toast.error('Erro ao enviar planejamento');
-    } finally {
-      setEnviando(false);
-    }
+    idSalvoRef.current = resultado.dados.planejamento.id;
+    setAlteracoesNaoSalvas(false);
+    setErros({});
+    const agora = new Date();
+    setUltimoSalvoHora(
+      `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`
+    );
   };
 
+  const handleEnviar = () => {
+    const resultado = enviarPlanejamentoParaRevisao({
+      planejamentoId: idSalvoRef.current,
+      ano: anoPlanejamento,
+      mes: mesPlanejamento,
+      quinzena: quinzenaPlanejamento,
+      dados: form
+    });
+
+    if (!resultado.ok) {
+      if (resultado.errosPorCampo) {
+        setErros(resultado.errosPorCampo);
+        const todosTocados: Partial<Record<CampoValidacao, boolean>> = {};
+        (Object.keys(resultado.errosPorCampo) as CampoValidacao[]).forEach(campo => {
+          todosTocados[campo] = true;
+        });
+        setTocado(prev => ({ ...prev, ...todosTocados }));
+      }
+      return;
+    }
+
+    idSalvoRef.current = resultado.dados.planejamento.id;
+    setAlteracoesNaoSalvas(false);
+    onClose();
+  };
+
+  const solicitarFechamento = () => {
+    if (alteracoesNaoSalvas) {
+      setConfirmandoFechamento(true);
+      return;
+    }
+    onClose();
+  };
+
+  const ehDevolvido = planejamentoAtual?.status === 'ajustes_solicitados';
+  const listaErrosResumo = Object.values(erros).filter((m): m is string => Boolean(m));
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="min-h-screen px-4 py-8">
-        <div className="max-w-4xl mx-auto bg-surface rounded-2xl shadow-2xl animate-scale-in border-2 border-base">
-          {/* Header */}
-          <div className="sticky top-0 z-10 bg-surface border-b-2 border-base px-4 md:px-8 py-4 md:py-6 flex items-center justify-between rounded-t-2xl shadow-md">
-            <div>
-              <h2 className="text-lg md:text-2xl font-bold text-text-primary tracking-tight">
-                {planejamentoId ? 'Editar' : 'Criar'} Planejamento
-              </h2>
-              <p className="text-xs md:text-sm font-medium text-text-muted mt-1">
-                {DateHelpers.getNomeMes(mes)} {anoAtual} - {quinzena}ª Quinzena
-              </p>
+    <>
+      <Modal
+        isOpen
+        onClose={solicitarFechamento}
+        title={
+          ehDevolvido
+            ? 'Corrigir Planejamento Devolvido'
+            : idSalvoRef.current
+              ? 'Editar Planejamento'
+              : 'Novo Planejamento Quinzenal'
+        }
+        subtitle={`${DateHelpers.getNomeMes(mesPlanejamento)} ${anoPlanejamento} · ${quinzenaPlanejamento}ª Quinzena (${DateHelpers.formatarPeriodo(periodoInicio, periodoFim)})`}
+        size="lg"
+        footer={
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex items-center justify-between sm:justify-start gap-3">
+              <Button variant="ghost" onClick={solicitarFechamento}>
+                Fechar
+              </Button>
+              <span className="text-xs text-muted">
+                {alteracoesNaoSalvas
+                  ? 'Alterações não salvas'
+                  : ultimoSalvoHora
+                    ? `Salvo às ${ultimoSalvoHora}`
+                    : 'Sem alterações pendentes'}
+              </span>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-hover rounded-lg transition-all text-text-muted hover:text-text-primary active:scale-95"
-            >
-              <X className="w-5 h-5 md:w-6 md:h-6" />
-            </button>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button variant="secondary" onClick={handleSalvarRascunho}>
+                <Save className="w-4 h-4" aria-hidden="true" />
+                {ehDevolvido ? 'Salvar alterações' : 'Salvar rascunho'}
+              </Button>
+              <Button variant="success" onClick={handleEnviar}>
+                <Send className="w-4 h-4" aria-hidden="true" />
+                {ehDevolvido ? 'Reenviar para revisão' : 'Enviar para revisão'}
+              </Button>
+            </div>
           </div>
-
-          {/* Formulário */}
-          <div className="p-8 space-y-6 bg-surface">
-            {/* Erros */}
-            {Object.keys(erros).length > 0 && (
-              <div className="bg-danger/15 border-2 border-danger/30 rounded-lg p-4">
-                <h3 className="font-bold text-danger mb-2">Erros encontrados:</h3>
-                <ul className="list-disc list-inside space-y-1">
-                  {Object.values(erros).map((erro, i) => (
-                    <li key={i} className="text-sm text-danger">{erro}</li>
-                  ))}
-                </ul>
+        }
+      >
+        <div className="space-y-6">
+          {/* Contexto de ajustes solicitados */}
+          {ehDevolvido && planejamentoAtual?.consideracoesDiretor && (
+            <div
+              role="note"
+              className="p-4 rounded-xl bg-danger/10 border border-danger/30 text-sm"
+            >
+              <div className="flex items-center gap-2 font-bold text-danger mb-1">
+                <AlertTriangle className="w-4 h-4" aria-hidden="true" />
+                Ajustes solicitados pela direção
               </div>
-            )}
+              <p className="text-primary whitespace-pre-wrap">
+                {planejamentoAtual.consideracoesDiretor}
+              </p>
+              {planejamentoAtual.prazoAjustes && (
+                <p className="text-xs text-danger mt-2 font-medium">
+                  Prazo sugerido: {DateHelpers.formatarDataHora(planejamentoAtual.prazoAjustes)}
+                </p>
+              )}
+            </div>
+          )}
 
-            {/* Título */}
-            <Input
-              label="Título do Planejamento"
-              required
-              value={form.titulo}
-              onChange={e => {
-                const novoTitulo = e.target.value;
-                setForm(prev => ({ ...prev, titulo: novoTitulo }));
-                if (tocado.titulo) {
-                  validarCampo('titulo', novoTitulo);
-                }
-              }}
-              onBlur={() => {
-                setTocado(prev => ({ ...prev, titulo: true }));
-                validarCampo('titulo', form.titulo);
-              }}
-              placeholder="Ex: Alfabetização - Introdução às Vogais"
-              maxLength={100}
-              error={tocado.titulo ? erros.titulo : undefined}
-              success={tocado.titulo && !erros.titulo && form.titulo.length >= 10}
-              helperText={!erros.titulo ? `${form.titulo.length}/100 caracteres` : undefined}
-            />
+          {/* Resumo de erros */}
+          {listaErrosResumo.length > 0 && (
+            <div
+              role="alert"
+              className="bg-danger/10 border border-danger/30 rounded-xl p-4"
+            >
+              <h3 className="text-sm font-bold text-danger mb-1.5">
+                Revise os pontos abaixo antes de continuar:
+              </h3>
+              <ul className="list-disc list-inside space-y-1">
+                {listaErrosResumo.map((erro, index) => (
+                  <li key={index} className="text-xs sm:text-sm text-danger">
+                    {erro}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-            {/* Disciplinas */}
-            <div>
-              <label className="block text-sm font-medium text-primary mb-2">
-                Disciplinas <span className="text-danger">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {disciplinasDisponiveis.map(disc => (
+          {/* Título */}
+          <Input
+            label="Título do planejamento"
+            required
+            value={form.titulo}
+            onChange={e => atualizarCampo('titulo', e.target.value)}
+            onBlur={() => marcarTocado('titulo', form.titulo)}
+            placeholder="Ex: Leitura compartilhada e reconhecimento de sílabas"
+            maxLength={LIMITES_PLANEJAMENTO.TITULO_MAX}
+            error={tocado.titulo ? erros.titulo : undefined}
+            success={
+              Boolean(tocado.titulo) &&
+              !erros.titulo &&
+              form.titulo.trim().length >= LIMITES_PLANEJAMENTO.TITULO_MIN
+            }
+            helperText={`${form.titulo.trim().length}/${LIMITES_PLANEJAMENTO.TITULO_MAX} caracteres (mínimo para envio: ${LIMITES_PLANEJAMENTO.TITULO_MIN})`}
+          />
+
+          {/* Disciplinas */}
+          <fieldset>
+            <legend className="block text-sm font-medium text-primary mb-2">
+              Disciplinas <span className="text-danger" aria-hidden="true">*</span>
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {disciplinasDisponiveis.map(disc => {
+                const selecionado = form.disciplinas.includes(disc);
+                return (
                   <button
                     key={disc}
                     type="button"
-                    onClick={() => toggleDisciplina(disc)}
-                    className={`px-3 py-2 text-sm md:px-4 md:text-base rounded-lg border-2 transition-all ${
-                      form.disciplinas.includes(disc)
-                        ? 'bg-primary text-white border-primary shadow-md hover:shadow-lg hover:bg-primary-hover'
-                        : 'bg-surface text-primary border-base hover:border-primary hover:bg-hover shadow-md'
+                    aria-pressed={selecionado}
+                    onClick={() => toggleItemLista('disciplinas', disc)}
+                    className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                      selecionado
+                        ? 'bg-primary text-on-primary border-primary font-medium'
+                        : 'bg-surface text-primary border-strong hover:bg-hover'
                     }`}
                   >
                     {disc}
                   </button>
-                ))}
-              </div>
-              {tocado.disciplinas && erros.disciplinas && (
-                <p className="mt-2 text-sm text-danger flex items-center gap-1">
-                  <AlertCircle className="w-4 h-4" />
-                  {erros.disciplinas}
-                </p>
-              )}
+                );
+              })}
             </div>
+            {tocado.disciplinas && erros.disciplinas && (
+              <p role="alert" className="mt-1.5 text-xs text-danger flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                {erros.disciplinas}
+              </p>
+            )}
+          </fieldset>
 
-            {/* Turmas */}
-            <div>
-              <label className="block text-sm font-medium text-primary mb-2">
-                Turmas <span className="text-danger">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {turmasDisponiveis.map(turma => (
+          {/* Turmas */}
+          <fieldset>
+            <legend className="block text-sm font-medium text-primary mb-2">
+              Turmas <span className="text-danger" aria-hidden="true">*</span>
+            </legend>
+            <div className="flex flex-wrap gap-2">
+              {turmasDisponiveis.map(turma => {
+                const selecionado = form.turmas.includes(turma);
+                return (
                   <button
                     key={turma}
                     type="button"
-                    onClick={() => toggleTurma(turma)}
-                    className={`px-3 py-2 text-sm md:px-4 md:text-base rounded-lg border-2 transition-all ${
-                      form.turmas.includes(turma)
-                        ? 'bg-primary text-white border-primary shadow-md hover:shadow-lg hover:bg-primary-hover'
-                        : 'bg-surface text-primary border-base hover:border-primary hover:bg-hover shadow-md'
+                    aria-pressed={selecionado}
+                    onClick={() => toggleItemLista('turmas', turma)}
+                    className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                      selecionado
+                        ? 'bg-primary text-on-primary border-primary font-medium'
+                        : 'bg-surface text-primary border-strong hover:bg-hover'
                     }`}
                   >
                     {turma}
                   </button>
-                ))}
-              </div>
-              {tocado.turmas && erros.turmas && (
-                <p className="mt-2 text-sm text-danger flex items-center gap-1">
-                  <AlertCircle className="w-4 h-4" />
-                  {erros.turmas}
-                </p>
-              )}
+                );
+              })}
             </div>
+            {tocado.turmas && erros.turmas && (
+              <p role="alert" className="mt-1.5 text-xs text-danger flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                {erros.turmas}
+              </p>
+            )}
+          </fieldset>
 
-            {/* Experiência de Aprendizagem */}
-            <Textarea
-              label="Experiência de Aprendizagem"
-              required
-              value={form.experienciaAprendizagem}
-              onChange={e => {
-                const novoValor = e.target.value;
-                setForm(prev => ({ ...prev, experienciaAprendizagem: novoValor }));
-                if (tocado.experienciaAprendizagem) {
-                  validarCampo('experienciaAprendizagem', novoValor);
-                }
-              }}
-              onBlur={() => {
-                setTocado(prev => ({ ...prev, experienciaAprendizagem: true }));
-                validarCampo('experienciaAprendizagem', form.experienciaAprendizagem);
-              }}
-              placeholder="Descreva as atividades, metodologias e dinâmicas que serão utilizadas..."
-              rows={5}
-              showCharCount
-              minChars={100}
-              maxChars={5000}
-              error={tocado.experienciaAprendizagem ? erros.experienciaAprendizagem : undefined}
-              success={tocado.experienciaAprendizagem && !erros.experienciaAprendizagem && form.experienciaAprendizagem.length >= 100}
-            />
+          {/* Experiência de Aprendizagem */}
+          <Textarea
+            label="Experiência de aprendizagem"
+            required
+            value={form.experienciaAprendizagem}
+            onChange={e => atualizarCampo('experienciaAprendizagem', e.target.value)}
+            onBlur={() => marcarTocado('experienciaAprendizagem', form.experienciaAprendizagem)}
+            placeholder="Descreva atividades, estratégias pedagógicas e sequência planejada para a quinzena..."
+            rows={5}
+            showCharCount
+            minChars={LIMITES_PLANEJAMENTO.EXPERIENCIA_MIN}
+            maxChars={LIMITES_PLANEJAMENTO.EXPERIENCIA_MAX}
+            error={tocado.experienciaAprendizagem ? erros.experienciaAprendizagem : undefined}
+            success={
+              Boolean(tocado.experienciaAprendizagem) &&
+              !erros.experienciaAprendizagem &&
+              form.experienciaAprendizagem.trim().length >= LIMITES_PLANEJAMENTO.EXPERIENCIA_MIN
+            }
+          />
 
-            {/* Objetivos */}
-            <div>
-              <label className="block text-sm font-medium text-primary mb-2">
-                Objetivos de Aprendizagem <span className="text-danger">*</span> (mínimo 2)
-              </label>
-              
-              {/* Lista de objetivos */}
-              <div className="space-y-2 mb-3">
+          {/* Objetivos */}
+          <div>
+            <label htmlFor={objetivoInputId} className="block text-sm font-medium text-primary mb-2">
+              Objetivos de aprendizagem <span className="text-danger" aria-hidden="true">*</span>{' '}
+              <span className="text-xs font-normal text-muted">
+                (mínimo {LIMITES_PLANEJAMENTO.OBJETIVOS_MIN} para envio)
+              </span>
+            </label>
+
+            {form.objetivos.length > 0 && (
+              <ol className="space-y-2 mb-3">
                 {form.objetivos.map((obj, index) => (
-                  <div key={obj.id} className="flex items-start gap-2 p-3 bg-elevated rounded-lg border-2 border-base shadow-md">
-                    <span className="font-bold text-muted mt-1 text-sm md:text-base">{index + 1}.</span>
-                    <p className="flex-1 text-primary text-sm md:text-base break-words">{obj.texto}</p>
+                  <li
+                    key={obj.id}
+                    className="flex items-start gap-2.5 p-3 bg-elevated rounded-lg border border-base"
+                  >
+                    <span className="text-xs font-bold text-muted mt-0.5">{index + 1}.</span>
+                    <p className="flex-1 text-sm text-primary break-words">{obj.texto}</p>
                     <button
                       type="button"
                       onClick={() => removerObjetivo(obj.id)}
-                      className="p-1 text-danger hover:bg-danger/10 rounded transition-all active:scale-95"
+                      aria-label={`Remover objetivo ${index + 1}`}
+                      className="p-1 text-danger hover:bg-danger/10 rounded transition-colors"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
                     </button>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ol>
+            )}
 
-              {/* Adicionar objetivo */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  value={novoObjetivo}
-                  onChange={e => setNovoObjetivo(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && adicionarObjetivo()}
-                  placeholder="Digite um objetivo e pressione Enter"
-                  maxLength={300}
-                  className="flex-1 px-4 py-2 text-sm md:text-base border-2 border-base rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-surface text-primary placeholder:text-muted shadow-md"
-                />
-                <Button onClick={adicionarObjetivo} disabled={!novoObjetivo.trim()}>
-                  <Plus className="w-5 h-5" />
-                  <span className="hidden sm:inline">Adicionar</span>
-                </Button>
-              </div>
-              
-              {tocado.objetivos && erros.objetivos && (
-                <p className="mt-2 text-sm text-danger flex items-center gap-1">
-                  <AlertCircle className="w-4 h-4" />
-                  {erros.objetivos}
-                </p>
-              )}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                id={objetivoInputId}
+                type="text"
+                value={novoObjetivo}
+                onChange={e => setNovoObjetivo(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    adicionarObjetivo();
+                  }
+                }}
+                placeholder="Digite um objetivo e pressione Enter ou clique em Adicionar"
+                maxLength={LIMITES_PLANEJAMENTO.OBJETIVO_TEXTO_MAX}
+                className="flex-1 px-3.5 py-2.5 text-sm border border-strong rounded-lg bg-surface text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <Button variant="secondary" onClick={adicionarObjetivo} disabled={!novoObjetivo.trim()}>
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                Adicionar objetivo
+              </Button>
             </div>
 
-            {/* Recursos Necessários */}
-            <div>
-              <label className="block text-sm font-medium text-primary mb-2">
-                Recursos Necessários
-              </label>
-              
-              {/* Lista de recursos */}
-              {form.recursosNecessarios.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {form.recursosNecessarios.map(recurso => (
-                    <span
-                      key={recurso}
-                      className="inline-flex items-center gap-2 px-3 py-1 bg-info/15 text-info border-2 border-info/30 rounded-full text-xs md:text-sm font-medium"
+            {tocado.objetivos && erros.objetivos && (
+              <p role="alert" className="mt-1.5 text-xs text-danger flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                {erros.objetivos}
+              </p>
+            )}
+          </div>
+
+          {/* Recursos */}
+          <div>
+            <label htmlFor={recursoInputId} className="block text-sm font-medium text-primary mb-2">
+              Recursos necessários <span className="text-xs font-normal text-muted">(opcional)</span>
+            </label>
+
+            {form.recursosNecessarios.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {form.recursosNecessarios.map(recurso => (
+                  <span
+                    key={recurso}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 bg-info/15 text-info border border-info/30 rounded-full text-xs font-medium"
+                  >
+                    <span>{recurso}</span>
+                    <button
+                      type="button"
+                      onClick={() => removerRecurso(recurso)}
+                      aria-label={`Remover recurso ${recurso}`}
+                      className="hover:opacity-75"
                     >
-                      {recurso}
-                      <button
-                        type="button"
-                        onClick={() => removerRecurso(recurso)}
-                        className="hover:text-info/80"
-                      >
-                        <X className="w-3 h-3 md:w-4 md:h-4" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Adicionar recurso */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  value={novoRecurso}
-                  onChange={e => setNovoRecurso(e.target.value)}
-                  onKeyPress={e => e.key === 'Enter' && adicionarRecurso()}
-                  placeholder="Digite um recurso e pressione Enter"
-                  maxLength={200}
-                  className="flex-1 px-4 py-2 text-sm md:text-base border-2 border-base rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary bg-surface text-primary placeholder:text-muted shadow-md"
-                />
-                <Button onClick={adicionarRecurso} disabled={!novoRecurso.trim()}>
-                  <Plus className="w-5 h-5" />
-                  <span className="hidden sm:inline">Adicionar</span>
-                </Button>
-              </div>
-            </div>
-
-            {/* Metodologia de Avaliação */}
-            <Textarea
-              label="Metodologia de Avaliação"
-              required
-              value={form.metodologiaAvaliacao}
-              onChange={e => {
-                const novoValor = e.target.value;
-                setForm(prev => ({ ...prev, metodologiaAvaliacao: novoValor }));
-                if (tocado.metodologiaAvaliacao) {
-                  validarCampo('metodologiaAvaliacao', novoValor);
-                }
-              }}
-              onBlur={() => {
-                setTocado(prev => ({ ...prev, metodologiaAvaliacao: true }));
-                validarCampo('metodologiaAvaliacao', form.metodologiaAvaliacao);
-              }}
-              placeholder="Como será avaliado o aprendizado dos alunos..."
-              rows={4}
-              showCharCount
-              minChars={50}
-              maxChars={2000}
-              error={tocado.metodologiaAvaliacao ? erros.metodologiaAvaliacao : undefined}
-              success={tocado.metodologiaAvaliacao && !erros.metodologiaAvaliacao && form.metodologiaAvaliacao.length >= 50}
-            />
-
-            {/* Instrumentos de Avaliação */}
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-2">
-                Instrumentos de Avaliação
-              </label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {instrumentosAvaliacaoDisponiveis.map(inst => (
-                  <label key={inst} className="flex items-center gap-2 p-3 bg-elevated rounded-lg cursor-pointer hover:bg-hover transition-all border-2 border-base hover:border-primary shadow-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.instrumentosAvaliacao.includes(inst)}
-                      onChange={() => toggleInstrumento(inst)}
-                      className="w-4 h-4 text-primary rounded"
-                    />
-                    <span className="text-sm text-primary font-medium">{inst}</span>
-                  </label>
+                      <X className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </span>
                 ))}
               </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-2 mb-2.5">
+              <input
+                id={recursoInputId}
+                type="text"
+                value={novoRecurso}
+                onChange={e => setNovoRecurso(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    adicionarRecurso();
+                  }
+                }}
+                placeholder="Ex: Quadro branco, material impresso..."
+                maxLength={LIMITES_PLANEJAMENTO.RECURSO_TEXTO_MAX}
+                className="flex-1 px-3.5 py-2.5 text-sm border border-strong rounded-lg bg-surface text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <Button variant="secondary" onClick={() => adicionarRecurso()} disabled={!novoRecurso.trim()}>
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                Adicionar recurso
+              </Button>
             </div>
 
-            {/* Conclusão */}
-            <Textarea
-              label="Conclusão e Resultados Esperados"
-              required
-              value={form.conclusao}
-              onChange={e => {
-                const novoValor = e.target.value;
-                setForm(prev => ({ ...prev, conclusao: novoValor }));
-                if (tocado.conclusao) {
-                  validarCampo('conclusao', novoValor);
-                }
-              }}
-              onBlur={() => {
-                setTocado(prev => ({ ...prev, conclusao: true }));
-                validarCampo('conclusao', form.conclusao);
-              }}
-              placeholder="Ao final desta quinzena, espera-se que os alunos..."
-              rows={4}
-              showCharCount
-              minChars={50}
-              maxChars={1000}
-              error={tocado.conclusao ? erros.conclusao : undefined}
-              success={tocado.conclusao && !erros.conclusao && form.conclusao.length >= 50}
-            />
+            <div className="flex flex-wrap gap-1.5">
+              {recursosDisponiveis
+                .filter(sug => !form.recursosNecessarios.some(r => r.toLowerCase() === sug.toLowerCase()))
+                .slice(0, 6)
+                .map(sug => (
+                  <button
+                    key={sug}
+                    type="button"
+                    onClick={() => adicionarRecurso(sug)}
+                    className="text-xs px-2.5 py-1 rounded-full bg-elevated border border-base text-secondary hover:bg-hover hover:text-primary transition-colors"
+                  >
+                    + {sug}
+                  </button>
+                ))}
+            </div>
+          </div>
 
-            {/* Referências */}
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-2">
-                Referências Bibliográficas (ABNT) <span className="text-danger">*</span> (mínimo 1)
-              </label>
-              
-              {/* Lista de referências */}
-              <div className="space-y-2 mb-3">
+          {/* Metodologia de Avaliação */}
+          <Textarea
+            label="Metodologia de avaliação"
+            required
+            value={form.metodologiaAvaliacao}
+            onChange={e => atualizarCampo('metodologiaAvaliacao', e.target.value)}
+            onBlur={() => marcarTocado('metodologiaAvaliacao', form.metodologiaAvaliacao)}
+            placeholder="Descreva os critérios e a forma como a aprendizagem será acompanhada..."
+            rows={4}
+            showCharCount
+            minChars={LIMITES_PLANEJAMENTO.METODOLOGIA_MIN}
+            maxChars={LIMITES_PLANEJAMENTO.METODOLOGIA_MAX}
+            error={tocado.metodologiaAvaliacao ? erros.metodologiaAvaliacao : undefined}
+            success={
+              Boolean(tocado.metodologiaAvaliacao) &&
+              !erros.metodologiaAvaliacao &&
+              form.metodologiaAvaliacao.trim().length >= LIMITES_PLANEJAMENTO.METODOLOGIA_MIN
+            }
+          />
+
+          {/* Instrumentos */}
+          <fieldset>
+            <legend className="block text-sm font-medium text-primary mb-2">
+              Instrumentos de avaliação <span className="text-xs font-normal text-muted">(opcional)</span>
+            </legend>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {instrumentosAvaliacaoDisponiveis.map(inst => (
+                <label
+                  key={inst}
+                  className="flex items-center gap-2 p-2.5 bg-elevated rounded-lg cursor-pointer hover:bg-hover border border-base transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.instrumentosAvaliacao.includes(inst)}
+                    onChange={() => toggleItemLista('instrumentosAvaliacao', inst)}
+                    className="w-4 h-4 rounded accent-blue-600"
+                  />
+                  <span className="text-xs sm:text-sm text-primary">{inst}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {/* Conclusão */}
+          <Textarea
+            label="Conclusão e resultados esperados"
+            required
+            value={form.conclusao}
+            onChange={e => atualizarCampo('conclusao', e.target.value)}
+            onBlur={() => marcarTocado('conclusao', form.conclusao)}
+            placeholder="Descreva os avanços esperados ao final da quinzena..."
+            rows={4}
+            showCharCount
+            minChars={LIMITES_PLANEJAMENTO.CONCLUSAO_MIN}
+            maxChars={LIMITES_PLANEJAMENTO.CONCLUSAO_MAX}
+            error={tocado.conclusao ? erros.conclusao : undefined}
+            success={
+              Boolean(tocado.conclusao) &&
+              !erros.conclusao &&
+              form.conclusao.trim().length >= LIMITES_PLANEJAMENTO.CONCLUSAO_MIN
+            }
+          />
+
+          {/* Referências */}
+          <div>
+            <label htmlFor={referenciaInputId} className="block text-sm font-medium text-primary mb-2">
+              Referências bibliográficas <span className="text-danger" aria-hidden="true">*</span>{' '}
+              <span className="text-xs font-normal text-muted">(mínimo 1 para envio)</span>
+            </label>
+
+            {form.referencias.length > 0 && (
+              <ol className="space-y-2 mb-3">
                 {form.referencias.map((ref, index) => (
-                  <div key={index} className="flex items-start gap-2 p-3 bg-elevated rounded-lg border-2 border-base shadow-md">
-                    <span className="font-bold text-text-muted mt-1 text-sm md:text-base">{index + 1}.</span>
-                    <p className="flex-1 text-xs md:text-sm text-text-primary break-words">{ref}</p>
+                  <li
+                    key={`${ref}-${index}`}
+                    className="flex items-start gap-2.5 p-3 bg-elevated rounded-lg border border-base"
+                  >
+                    <span className="text-xs font-bold text-muted mt-0.5">{index + 1}.</span>
+                    <p className="flex-1 text-sm text-primary break-words">{ref}</p>
                     <button
                       type="button"
                       onClick={() => removerReferencia(index)}
+                      aria-label={`Remover referência ${index + 1}`}
                       className="p-1 text-danger hover:bg-danger/10 rounded transition-colors"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
                     </button>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ol>
+            )}
 
-              {/* Adicionar referência */}
-              <div className="space-y-2">
-                <textarea
-                  value={novaReferencia}
-                  onChange={e => setNovaReferencia(e.target.value)}
-                  placeholder="Ex: Referência bibliográfica fictícia"
-                  maxLength={500}
-                  className="w-full px-4 py-2 text-sm md:text-base border-2 border-base rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-surface text-primary placeholder:text-muted shadow-md"
-                  rows={2}
-                />
-                <div className="text-xs text-right text-muted">
-                  {novaReferencia.length}/500 caracteres
-                </div>
-                <Button onClick={adicionarReferencia} disabled={!novaReferencia.trim()}>
-                  <Plus className="w-5 h-5" />
-                  <span className="hidden sm:inline">Adicionar Referência</span>
-                  <span className="sm:hidden">Adicionar</span>
+            <div className="space-y-2">
+              <textarea
+                id={referenciaInputId}
+                value={novaReferencia}
+                onChange={e => setNovaReferencia(e.target.value)}
+                placeholder="Ex: Referência didática fictícia — Guia de Atividades."
+                maxLength={LIMITES_PLANEJAMENTO.REFERENCIA_TEXTO_MAX}
+                rows={2}
+                className="w-full px-3.5 py-2.5 text-sm border border-strong rounded-lg bg-surface text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <Button variant="secondary" size="sm" onClick={adicionarReferencia} disabled={!novaReferencia.trim()}>
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  Adicionar referência
                 </Button>
+                <span className="text-xs text-muted">
+                  {novaReferencia.length}/{LIMITES_PLANEJAMENTO.REFERENCIA_TEXTO_MAX}
+                </span>
               </div>
-              
-              {tocado.referencias && erros.referencias && (
-                <p className="mt-2 text-sm text-danger flex items-center gap-1">
-                  <AlertCircle className="w-4 h-4" />
-                  {erros.referencias}
-                </p>
-              )}
             </div>
 
-            {/* Observações (opcional) */}
-            <Textarea
-              label="Observações Adicionais (opcional; apenas dados fictícios)"
-              value={form.observacoes}
-              onChange={e => setForm(prev => ({ ...prev, observacoes: e.target.value }))}
-              placeholder="Notas pessoais, adaptações necessárias, etc..."
-              rows={3}
-              showCharCount
-              maxChars={1000}
-            />
+            {tocado.referencias && erros.referencias && (
+              <p role="alert" className="mt-1.5 text-xs text-danger flex items-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                {erros.referencias}
+              </p>
+            )}
           </div>
 
-          {/* Footer com botões */}
-          <div className="sticky bottom-0 bg-surface border-t-2 border-base px-4 md:px-6 py-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-b-2xl shadow-lg">
-            <Button variant="ghost" onClick={onClose} className="order-3 sm:order-1">
-              Cancelar
-            </Button>
-
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 order-1 sm:order-2">
-              <Button
-                variant="secondary"
-                onClick={() => handleSalvarRascunho(false)}
-                isLoading={salvando}
-                className="w-full sm:w-auto"
-              >
-                <Save className="w-5 h-5" />
-                <span className="hidden md:inline">Salvar Rascunho</span>
-                <span className="md:hidden">Rascunho</span>
-              </Button>
-
-              <Button
-                variant="success"
-                onClick={handleEnviar}
-                isLoading={enviando}
-                className="w-full sm:w-auto"
-              >
-                <Send className="w-5 h-5" />
-                <span className="hidden md:inline">Enviar para Revisão</span>
-                <span className="md:hidden">Enviar</span>
-              </Button>
-            </div>
-          </div>
+          {/* Observações */}
+          <Textarea
+            label="Observações adicionais (opcional; use apenas dados fictícios)"
+            value={form.observacoes}
+            onChange={e => atualizarCampo('observacoes', e.target.value)}
+            placeholder="Notas gerais ou adaptações simuladas..."
+            rows={3}
+            showCharCount
+            maxChars={LIMITES_PLANEJAMENTO.OBSERVACOES_MAX}
+          />
         </div>
-      </div>
-    </div>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={confirmandoFechamento}
+        title="Descartar alterações não salvas?"
+        description="Você modificou campos deste formulário sem salvar. Deseja fechar mesmo assim?"
+        confirmLabel="Descartar e fechar"
+        cancelLabel="Continuar editando"
+        confirmVariant="danger"
+        onConfirm={() => {
+          setConfirmandoFechamento(false);
+          onClose();
+        }}
+        onCancel={() => setConfirmandoFechamento(false)}
+      />
+    </>
   );
 };
-

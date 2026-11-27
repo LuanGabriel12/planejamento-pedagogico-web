@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { carregarTemaStorage, salvarTemaStorage } from '../persistence/storage';
 
 export type ThemeName = 'light' | 'dark';
 
@@ -10,18 +11,13 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'demo_pedagogica_v1_theme';
-
 export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [theme, setThemeState] = useState<ThemeName>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return (stored === 'light' || stored === 'dark') ? stored : 'light';
-  });
+  const [theme, setThemeState] = useState<ThemeName>(() => carregarTemaStorage());
 
   useEffect(() => {
     const root = document.documentElement;
     root.setAttribute('data-theme', theme);
-    localStorage.setItem(STORAGE_KEY, theme);
+    salvarTemaStorage(theme);
   }, [theme]);
 
   const setTheme = (newTheme: ThemeName) => {
@@ -29,7 +25,7 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const toggleTheme = () => {
-    setThemeState(prev => prev === 'light' ? 'dark' : 'light');
+    setThemeState(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
   return (
@@ -46,4 +42,3 @@ export const useTheme = () => {
   }
   return context;
 };
-

@@ -1,7 +1,10 @@
-import React from 'react';
-import { X, Mail, User, Shield, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { Mail, User, Shield, LogOut, Download, RotateCcw } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { calcularEstatisticasPerfil } from '../../domain/metrics';
+import { Modal } from './Modal';
 import { Button } from './Button';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -9,190 +12,170 @@ interface ProfileModalProps {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
-  const { usuarioLogado, logout, estado } = useApp();
+  const {
+    usuarioLogado,
+    logout,
+    estado,
+    exportarDados,
+    restaurarDadosDemonstrativos
+  } = useApp();
+  const [confirmandoReset, setConfirmandoReset] = useState(false);
 
-  if (!isOpen || !usuarioLogado) return null;
+  if (!usuarioLogado) return null;
 
-  const handleLogout = () => {
-    if (confirm('Deseja realmente sair?')) {
-      logout();
-      onClose();
-    }
+  const anoAtual = estado.configuracoes.anoAtual;
+  const stats = calcularEstatisticasPerfil(estado.planejamentos, usuarioLogado, anoAtual);
+
+  const handleSair = () => {
+    logout();
+    onClose();
   };
-
-  // Estatísticas do usuário
-  const getEstatisticas = () => {
-    if (usuarioLogado.role === 'professor') {
-      const planejamentos = estado.planejamentos.filter(p => p.professorId === usuarioLogado.id);
-      const aprovados = planejamentos.filter(p => p.status === 'aprovado').length;
-      const pendentes = planejamentos.filter(p => p.status === 'aguardando_revisao').length;
-      
-      return {
-        total: planejamentos.length,
-        aprovados,
-        pendentes,
-        taxaAprovacao: planejamentos.length > 0 ? Math.round((aprovados / planejamentos.length) * 100) : 0
-      };
-    } else {
-      const total = estado.planejamentos.length;
-      const pendentes = estado.planejamentos.filter(p => p.status === 'aguardando_revisao').length;
-      const aprovados = estado.planejamentos.filter(p => p.status === 'aprovado').length;
-      
-      return { total, pendentes, aprovados };
-    }
-  };
-
-  const stats = getEstatisticas();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-      {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      {/* Modal - fundo 100% sólido */}
-      <div className="relative bg-surface rounded-2xl shadow-2xl max-w-md w-full animate-scale-in border-2 border-base">
-        {/* Header */}
-        <div className="px-8 py-6 border-b-2 border-base bg-surface">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-text-primary tracking-tight">
-              Meu Perfil
-            </h2>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg transition-all hover:bg-hover text-text-muted hover:text-text-primary active:scale-95"
-            >
-              <X className="w-6 h-6" />
-            </button>
+    <>
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        title="Perfil Simulado"
+        subtitle="Informações fictícias armazenadas apenas neste navegador"
+        size="sm"
+        footer={
+          <div className="flex flex-col gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="secondary" size="sm" onClick={exportarDados}>
+                <Download className="w-4 h-4" aria-hidden="true" />
+                Exportar JSON
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setConfirmandoReset(true)}
+              >
+                <RotateCcw className="w-4 h-4" aria-hidden="true" />
+                Restaurar demo
+              </Button>
+            </div>
+            <Button variant="danger" onClick={handleSair} className="w-full">
+              <LogOut className="w-4 h-4" aria-hidden="true" />
+              Trocar de perfil
+            </Button>
           </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-8 space-y-6 bg-surface">
-          {/* Avatar e Nome */}
+        }
+      >
+        <div className="space-y-5">
           <div className="flex flex-col items-center text-center">
-            <div className="w-24 h-24 bg-gradient-to-br from-primary to-info rounded-full flex items-center justify-center text-on-primary text-3xl font-bold mb-4 shadow-lg">
+            <div className="w-16 h-16 bg-primary text-on-primary rounded-full flex items-center justify-center text-xl font-bold mb-3">
               {usuarioLogado.avatar}
             </div>
-            <h3 className="text-2xl font-bold text-text-primary">
-              {usuarioLogado.nome}
-            </h3>
-            <span className={`inline-flex items-center gap-2 mt-2 px-3 py-1 rounded-full text-sm font-medium ${
-              usuarioLogado.role === 'professor'
-                ? 'bg-primary/10 text-primary'
-                : 'bg-info/10 text-info'
-            }`}>
+            <h3 className="text-lg font-bold text-primary">{usuarioLogado.nome}</h3>
+            <span
+              className={`inline-flex items-center gap-1.5 mt-1.5 px-3 py-0.5 rounded-full text-xs font-semibold ${
+                usuarioLogado.role === 'professor'
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-info/10 text-info'
+              }`}
+            >
               {usuarioLogado.role === 'professor' ? (
                 <>
-                  <User className="w-4 h-4" />
-                  Professor
+                  <User className="w-3.5 h-3.5" aria-hidden="true" />
+                  Professor fictício
                 </>
               ) : (
                 <>
-                  <Shield className="w-4 h-4" />
-                  Diretor
+                  <Shield className="w-3.5 h-3.5" aria-hidden="true" />
+                  Direção fictícia
                 </>
               )}
             </span>
           </div>
 
-          {/* Informações */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-elevated border-2 border-base shadow-sm">
-              <Mail className="w-5 h-5 text-text-muted" />
-              <div className="flex-1">
-                <p className="text-xs font-medium text-text-muted">Email</p>
-                <p className="font-semibold text-text-primary">
-                  {usuarioLogado.email}
-                </p>
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-elevated border border-base">
+              <Mail className="w-4 h-4 text-muted shrink-0" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-xs text-muted">E-mail fictício</p>
+                <p className="text-sm font-medium text-primary truncate">{usuarioLogado.email}</p>
               </div>
             </div>
 
             {usuarioLogado.role === 'professor' && usuarioLogado.disciplinas && (
-              <div className="flex items-start gap-3 p-4 rounded-lg bg-elevated border-2 border-base shadow-sm">
-                <div className="flex-1">
-                  <p className="text-xs font-medium text-text-muted mb-2">Disciplinas</p>
-                  <div className="flex flex-wrap gap-2">
-                    {usuarioLogado.disciplinas.map(disc => (
-                      <span
-                        key={disc}
-                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-primary"
-                      >
-                        {disc}
-                      </span>
-                    ))}
-                  </div>
+              <div className="p-3 rounded-lg bg-elevated border border-base">
+                <p className="text-xs text-muted mb-1.5">Disciplinas de referência</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {usuarioLogado.disciplinas.map(disc => (
+                    <span
+                      key={disc}
+                      className="text-xs font-medium px-2.5 py-0.5 rounded-md bg-primary/10 text-primary"
+                    >
+                      {disc}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
 
             {usuarioLogado.role === 'professor' && usuarioLogado.turmas && (
-              <div className="flex items-start gap-3 p-4 rounded-lg bg-elevated border-2 border-base shadow-sm">
-                <div className="flex-1">
-                  <p className="text-xs font-medium text-text-muted mb-2">Turmas</p>
-                  <div className="flex flex-wrap gap-2">
-                    {usuarioLogado.turmas.map(turma => (
-                      <span
-                        key={turma}
-                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-info/10 border border-info/20 text-info"
-                      >
-                        {turma}
-                      </span>
-                    ))}
-                  </div>
+              <div className="p-3 rounded-lg bg-elevated border border-base">
+                <p className="text-xs text-muted mb-1.5">Turmas de referência</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {usuarioLogado.turmas.map(turma => (
+                    <span
+                      key={turma}
+                      className="text-xs font-medium px-2.5 py-0.5 rounded-md bg-info/10 text-info"
+                    >
+                      {turma}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
           </div>
 
-          {/* Estatísticas */}
-          <div className="p-5 rounded-xl bg-elevated border-2 border-base shadow-sm">
-            <h4 className="text-sm font-bold mb-4 text-text-primary">
-              📊 Estatísticas {estado.configuracoes.anoAtual}
+          {/* Estatísticas do ano selecionado */}
+          <div className="p-4 rounded-xl bg-elevated border border-base">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-muted mb-3">
+              Resumo em {stats.ano}
             </h4>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="text-center p-3 rounded-lg bg-surface border-2 border-base shadow-sm">
-                <p className="text-2xl font-bold text-text-primary">
-                  {stats.total}
-                </p>
-                <p className="text-xs font-medium text-text-muted mt-1">Total</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="p-2.5 rounded-lg bg-surface border border-base text-center">
+                <p className="text-xl font-bold text-primary">{stats.total}</p>
+                <p className="text-xs text-muted">Total</p>
               </div>
-              <div className="text-center p-3 rounded-lg bg-success/10 border-2 border-success/30 shadow-sm">
-                <p className="text-2xl font-bold text-success">
-                  {stats.aprovados}
-                </p>
-                <p className="text-xs font-medium text-text-muted mt-1">Aprovados</p>
+              <div className="p-2.5 rounded-lg bg-success/10 border border-success/20 text-center">
+                <p className="text-xl font-bold text-success">{stats.aprovados}</p>
+                <p className="text-xs text-muted">Aprovados</p>
               </div>
-              <div className="text-center p-3 rounded-lg bg-warning/10 border-2 border-warning/30 shadow-sm">
-                <p className="text-2xl font-bold text-warning">
-                  {stats.pendentes}
-                </p>
-                <p className="text-xs font-medium text-text-muted mt-1">Pendentes</p>
+              <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/20 text-center">
+                <p className="text-xl font-bold text-warning">{stats.pendentes}</p>
+                <p className="text-xs text-muted">Em revisão</p>
+              </div>
+              <div className="p-2.5 rounded-lg bg-danger/10 border border-danger/20 text-center">
+                <p className="text-xl font-bold text-danger">{stats.ajustes}</p>
+                <p className="text-xs text-muted">Ajustes</p>
               </div>
             </div>
-            {'taxaAprovacao' in stats && (
-              <div className="mt-4 pt-4 border-t-2 border-base">
-                <p className="text-xs font-medium text-text-muted">Taxa de Aprovação</p>
-                <p className="text-lg font-bold text-text-primary">
-                  {stats.taxaAprovacao}%
-                </p>
-              </div>
+            {stats.taxaAprovacao !== undefined && (
+              <p className="text-xs text-secondary mt-3 text-center">
+                Taxa de aprovação em {stats.ano}: <strong>{stats.taxaAprovacao}%</strong>
+              </p>
             )}
           </div>
-
-          {/* Botão de Logout */}
-          <Button
-            variant="danger"
-            onClick={handleLogout}
-            className="w-full"
-          >
-            <LogOut className="w-5 h-5" />
-            Sair do Sistema
-          </Button>
         </div>
-      </div>
-    </div>
+      </Modal>
+
+      <ConfirmDialog
+        isOpen={confirmandoReset}
+        title="Restaurar dados demonstrativos?"
+        description="Todos os planejamentos criados ou alterados localmente serão substituídos pelos exemplos fictícios iniciais."
+        confirmLabel="Restaurar exemplos"
+        confirmVariant="danger"
+        onConfirm={() => {
+          restaurarDadosDemonstrativos();
+          setConfirmandoReset(false);
+          onClose();
+        }}
+        onCancel={() => setConfirmandoReset(false)}
+      />
+    </>
   );
 };
